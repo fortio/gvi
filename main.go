@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"fortio.org/cli"
+	"fortio.org/gvi/vi"
 	"fortio.org/log"
 	"fortio.org/terminal/ansipixels"
 )
@@ -20,9 +21,19 @@ func Main() int {
 		return log.FErrf("Failed to open terminal: %v", err)
 	}
 	defer ap.Restore()
-	ap.ClearScreen()
-	ap.WriteBoxed(ap.H/2, "Hello, World!\nHiya caches")
-	_ = ap.ReadOrResizeOrSignal()
+	ed := vi.NewVi(ap)
+	ap.OnResize = ed.Update
+	_ = ap.OnResize()
+	cont := true
+	for cont {
+		err = ap.ReadOrResizeOrSignal()
+		if err != nil {
+			return log.FErrf("Error reading terminal: %v", err)
+		}
+		if len(ap.Data) > 0 {
+			cont = ed.Process(ap.Data)
+		}
+	}
 	ap.MoveCursor(0, ap.H-1)
 	return 0
 }
