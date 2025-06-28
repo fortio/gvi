@@ -47,7 +47,7 @@ func NewVi(ap *ansipixels.AnsiPixels) *Vi {
 func (v *Vi) Update() error {
 	v.ap.ClearScreen()
 	v.UpdateStatus()
-	v.ap.WriteBoxed(v.ap.H/2, "Hello, World!\nHiya caches\n':q' to quit\nEsc or I switch mode\ntry resize\n")
+	v.ap.WriteBoxed(v.ap.H/2, "Hello, World!\nHiya caches\n':q' to quit\nEsc, I, : to switch mode\ntry resize\n")
 	return nil
 }
 
