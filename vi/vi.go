@@ -18,11 +18,11 @@ const (
 func (m Mode) String() string {
 	switch m {
 	case NavMode:
-		return "Navigation"
+		return ansipixels.Cyan + "Navigation" + ansipixels.White
 	case CommandMode:
-		return "Command"
+		return ansipixels.Red + "Command" + ansipixels.White
 	case InsertMode:
-		return "Insert"
+		return ansipixels.Green + "Insert" + ansipixels.White
 	default:
 		return "Unknown"
 	}
@@ -47,7 +47,7 @@ func NewVi(ap *ansipixels.AnsiPixels) *Vi {
 func (v *Vi) Update() error {
 	v.ap.ClearScreen()
 	v.UpdateStatus()
-	v.ap.WriteBoxed(v.ap.H/2, "Hello, World!\nHiya caches\n':q' to quit\nEsc, I, : to switch mode\ntry resize\n")
+	v.ap.WriteBoxed(v.ap.H/2, "Welcome to gvi (vi in go)!\n'ESC:q' to quit\nhjkl to move\nEsc, i, : to switch mode\ntry resize\n")
 	return nil
 }
 
