@@ -2,6 +2,7 @@ package vi // import "fortio.org/gvi/vi"
 
 import (
 	"bytes"
+	"strings"
 
 	"fortio.org/terminal/ansipixels"
 )
@@ -50,11 +51,21 @@ func (v *Vi) Update() error {
 	return nil
 }
 
+func (v *Vi) CommandStatus() {
+	v.ap.WriteAt(0, v.ap.H-1, ":%s", string(v.buf))
+	v.ap.ClearEndOfLine()
+}
+
 func (v *Vi) UpdateStatus() {
-	v.ap.WriteAt(0, v.ap.H-2, "%s File: %s - Mode: %s - %dx%d %s",
-		ansipixels.Inverse, v.filename, v.cmdMode.String(), v.ap.W, v.ap.H,
+	v.ap.WriteAt(0, v.ap.H-2, "%s File: %s - Mode: %s - @%d,%d [%dx%d] %s",
+		ansipixels.Inverse, v.filename, v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H,
 		ansipixels.Reset)
-	if v.cmdMode != CommandMode {
+	v.ap.ClearEndOfLine()
+	if v.cmdMode == CommandMode {
+		v.CommandStatus()
+	} else {
+		v.ap.MoveCursor(0, v.ap.H-1)
+		v.ap.ClearEndOfLine()
 		v.ap.MoveCursor(v.cx, v.cy)
 	}
 }
@@ -74,6 +85,7 @@ func (v *Vi) navigate(b byte) {
 	case ':':
 		v.cmdMode = CommandMode
 		v.ap.WriteAtStr(0, v.ap.H-1, ":")
+		v.ap.ClearEndOfLine() // Clear the command line
 	case 0x1b: // Escape key
 		// nothing to do, it's ok
 	default:
@@ -88,11 +100,13 @@ func (v *Vi) command(data []byte) bool {
 	case "q":
 		v.ap.WriteAt(0, v.ap.H-1, "Exiting...\r\n")
 		return false // Exit the editor
+	case "w":
+		v.ap.WriteAt(0, v.ap.H-1, "Write command not implemented yet")
 	default:
 		v.ap.WriteAt(0, v.ap.H-1, "Unknown command: %q (:q to quit)", cmd)
 	}
-	v.cmdMode = NavMode // Return to navigation mode after command
-	return true         // Continue processing
+	// for now stay in command mode until esc
+	return true // Continue processing
 }
 
 func (v *Vi) HasEsc() int {
@@ -101,6 +115,7 @@ func (v *Vi) HasEsc() int {
 }
 
 func (v *Vi) Process() bool {
+	cont := true
 	if len(v.ap.Data) == 0 {
 		return true // No input, continue
 	}
@@ -110,7 +125,10 @@ func (v *Vi) Process() bool {
 		c := v.buf[0]
 		v.buf = v.buf[1:] // Remove the first byte for processing
 		v.navigate(c)
+		v.UpdateStatus()
 	case CommandMode:
+		v.buf = bytes.TrimPrefix(v.buf, []byte{':'}) // Remove extra leading ':', useful after error.
+		v.UpdateStatus()
 		hasEsc := v.HasEsc()
 		if hasEsc >= 0 {
 			v.cmdMode = NavMode          // Switch back to navigation mode on escape
@@ -120,12 +138,10 @@ func (v *Vi) Process() bool {
 			break
 		}
 		ret := bytes.IndexByte(v.buf, '\r')
-		if ret < 0 {
-			v.ap.WriteAt(0, v.ap.H-1, ":%s", string(v.buf))
-		} else {
+		if ret >= 0 {
 			data := v.buf[:ret]   // Get the command input up to the carriage return
 			v.buf = v.buf[ret+1:] // Remove the command input from
-			return v.command(data)
+			cont = v.command(data)
 		}
 	case InsertMode:
 		// Handle insert mode input (e.g., add to buffer)
@@ -138,9 +154,19 @@ func (v *Vi) Process() bool {
 		} else {
 			v.buf = nil
 		}
-		v.ap.WriteAt(v.cx, v.cy, str)
-		v.cx += len(str) // Move cursor right by the length of the input
+		retPos := strings.IndexByte(str, '\r')
+		if retPos >= 0 {
+			str = str[:retPos] // Remove everything after the first carriage return
+		}
+		// split by line (\r)
+		v.ap.WriteAtStr(v.cx, v.cy, str)
+		if retPos >= 0 {
+			v.cy++
+			v.cx = 0
+		} else {
+			v.cx += len(str) // Move cursor right by the length of the input
+		}
+		v.UpdateStatus()
 	}
-	v.UpdateStatus()
-	return true // Continue processing
+	return cont // Continue processing or not if command was 'q'
 }
