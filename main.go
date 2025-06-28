@@ -31,7 +31,7 @@ func Main() int {
 			return log.FErrf("Error reading terminal: %v", err)
 		}
 		if len(ap.Data) > 0 {
-			cont = ed.Process(ap.Data)
+			cont = ed.Process()
 		}
 	}
 	ap.MoveCursor(0, ap.H-1)
