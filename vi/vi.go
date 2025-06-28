@@ -47,7 +47,7 @@ func NewVi(ap *ansipixels.AnsiPixels) *Vi {
 func (v *Vi) Update() error {
 	v.ap.ClearScreen()
 	v.UpdateStatus()
-	v.ap.WriteBoxed(v.ap.H/2, "Welcome to gvi (vi in go)!\n'ESC:q' to quit\nhjkl to move\nEsc, i, : to switch mode\ntry resize\n")
+	v.ap.WriteBoxed(v.ap.H/2-4, "Welcome to gvi (vi in go)!\n'ESC:q' to quit\nhjkl to move\nEsc, i, : to switch mode\ntry resize\n")
 	return nil
 }
 
