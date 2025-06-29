@@ -16,7 +16,7 @@ func main() {
 
 func Main() int {
 	cli.MinArgs = 0
-	cli.MaxArgs = 1
+	cli.MaxArgs = 1 // we can take n files later and implement :n
 	cli.ArgsHelp = "[filename]\t\tto edit a file, vi style"
 	cli.Main()
 	ap := ansipixels.NewAnsiPixels(20.)
@@ -26,7 +26,7 @@ func Main() int {
 	}
 	defer ap.Restore()
 	vi := vi.NewVi(ap)
-	ap.OnResize = vi.Update
+	ap.OnResize = vi.UpdateRS
 	_ = ap.OnResize()
 	if flag.NArg() == 1 {
 		vi.Open(flag.Arg(0))

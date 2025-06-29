@@ -29,27 +29,36 @@ func (m Mode) String() string {
 }
 
 type Vi struct {
-	cmdMode  Mode
-	ap       *ansipixels.AnsiPixels
-	filename string // Not used in this example, but could be used to track the file being edited
-	cx, cy   int    // Cursor position
-	inputBuf []byte // Buffer for partial input
-	buf      Buffer
-	splash   bool // Show splash screen on first refresh.
+	cmdMode      Mode
+	ap           *ansipixels.AnsiPixels
+	filename     string // Not used in this example, but could be used to track the file being edited
+	cx, cy       int    // Cursor position
+	inputBuf     []byte // Buffer for partial input
+	buf          Buffer
+	splash       bool // Show splash screen on first refresh.
+	offset       int  // Offset in lines for scrolling.
+	usableHeight int  // v.ap.H - 2
 }
 
 func NewVi(ap *ansipixels.AnsiPixels) *Vi {
 	return &Vi{
-		cmdMode:  NavMode,
-		ap:       ap,
-		filename: "...", // no filename case.
-		splash:   true,  // Show splash screen on first refresh.
+		cmdMode:      NavMode,
+		ap:           ap,
+		filename:     "...", // no filename case.
+		splash:       true,  // Show splash screen on first refresh.
+		usableHeight: ap.H - 2,
 	}
 }
 
-func (v *Vi) Update() error {
+func (v *Vi) UpdateRS() error {
+	v.usableHeight = v.ap.H - 2
+	v.Update()
+	return nil
+}
+
+func (v *Vi) Update() {
 	v.ap.ClearScreen()
-	lines := v.buf.GetLines(0, v.ap.H-2) // Get the lines from the buffer and display them
+	lines := v.buf.GetLines(v.offset, v.usableHeight) // Get the lines from the buffer and display them
 	for i, line := range lines {
 		v.ap.WriteAtStr(0, i, line)
 	}
@@ -57,7 +66,6 @@ func (v *Vi) Update() error {
 	if v.splash {
 		v.ap.WriteBoxed(v.ap.H/2-4, "Welcome to gvi (vi in go)!\n'ESC:q' to quit\nhjkl to move\nEsc, i, : to switch mode\ntry resize\n")
 	}
-	return nil
 }
 
 func (v *Vi) CommandStatus() {
@@ -66,8 +74,8 @@ func (v *Vi) CommandStatus() {
 }
 
 func (v *Vi) UpdateStatus() {
-	v.ap.WriteAt(0, v.ap.H-2, "%s File: %s (%d lines) - Mode: %s - @%d,%d [%dx%d] %s",
-		ansipixels.Inverse, v.filename, v.buf.NumLines(), v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H,
+	v.ap.WriteAt(0, v.usableHeight, "%s File: %s (%d/%d lines) - %s - @%d,%d [%dx%d] %s",
+		ansipixels.Inverse, v.filename, v.cx+1+v.offset, v.buf.NumLines(), v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H,
 		ansipixels.Reset)
 	v.ap.ClearEndOfLine()
 	if v.cmdMode == CommandMode {
@@ -79,13 +87,34 @@ func (v *Vi) UpdateStatus() {
 	}
 }
 
+func (v *Vi) VScroll(delta int) {
+	v.cy += delta
+	if v.cy < 0 {
+		v.cy = 0
+		v.offset = max(0, v.offset-1)
+		v.Update() // only if we scrolled. (in theory... shouldn't update at <0 etc).
+	} else if v.cy >= v.usableHeight {
+		v.cy = v.usableHeight - 1 // Keep cursor within bounds
+		v.offset = min(v.buf.NumLines()-v.usableHeight, v.offset+1)
+		v.Update()
+	}
+}
+
 func (v *Vi) navigate(b byte) {
 	// scroll instead when reading edges
 	switch b {
 	case 'j':
-		v.cy = min(v.ap.H-3, v.cy+1) // Move cursor down
+		v.VScroll(1) // Move cursor down
 	case 'k':
-		v.cy = max(0, v.cy-1) // Move cursor up
+		v.VScroll(-1) // Move cursor up
+	case 4: // Ctrl-D
+		v.VScroll(v.usableHeight / 2) // Half page down
+	case 21: // Ctrl-U
+		v.VScroll(-v.usableHeight / 2) // Half page up
+	case 6: // Ctrl-F
+		v.VScroll(v.usableHeight) // Page down
+	case 2: // Ctrl-B
+		v.VScroll(-v.usableHeight) // Page up
 	case 'h':
 		v.cx = max(0, v.cx-1) // Move cursor left
 	case 'l':
@@ -195,6 +224,6 @@ func (v *Vi) Open(filename string) {
 		v.ShowError("Error opening file", err)
 		return
 	}
-	_ = v.Update()
+	v.Update()
 	v.ap.WriteAt(0, v.ap.H-1, "%sOpened file: %s%s", ansipixels.Green, filename, ansipixels.Reset)
 }

@@ -33,10 +33,11 @@ func (b *Buffer) Open(filename string) error {
 }
 
 // GetLines returns the lines in the buffer from start to end.
-func (b *Buffer) GetLines(start, end int) []string {
+func (b *Buffer) GetLines(start, num int) []string {
 	if start < 0 {
 		start = 0
 	}
+	end := start + num
 	if end > len(b.lines) {
 		end = len(b.lines)
 	}
