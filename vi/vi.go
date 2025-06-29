@@ -29,27 +29,36 @@ func (m Mode) String() string {
 }
 
 type Vi struct {
-	cmdMode  Mode
-	ap       *ansipixels.AnsiPixels
-	filename string // Not used in this example, but could be used to track the file being edited
-	cx, cy   int    // Cursor position
-	inputBuf []byte // Buffer for partial input
-	buf      Buffer
-	splash   bool // Show splash screen on first refresh.
+	cmdMode      Mode
+	ap           *ansipixels.AnsiPixels
+	filename     string // Not used in this example, but could be used to track the file being edited
+	cx, cy       int    // Cursor position
+	inputBuf     []byte // Buffer for partial input
+	buf          Buffer
+	splash       bool // Show splash screen on first refresh.
+	offset       int  // Offset in lines for scrolling.
+	usableHeight int  // v.ap.H - 2
 }
 
 func NewVi(ap *ansipixels.AnsiPixels) *Vi {
 	return &Vi{
-		cmdMode:  NavMode,
-		ap:       ap,
-		filename: "...", // no filename case.
-		splash:   true,  // Show splash screen on first refresh.
+		cmdMode:      NavMode,
+		ap:           ap,
+		filename:     "...", // no filename case.
+		splash:       true,  // Show splash screen on first refresh.
+		usableHeight: ap.H - 2,
 	}
 }
 
-func (v *Vi) Update() error {
+func (v *Vi) UpdateRS() error {
+	v.usableHeight = v.ap.H - 2
+	v.Update()
+	return nil
+}
+
+func (v *Vi) Update() {
 	v.ap.ClearScreen()
-	lines := v.buf.GetLines(0, v.ap.H-2) // Get the lines from the buffer and display them
+	lines := v.buf.GetLines(v.offset, v.usableHeight) // Get the lines from the buffer and display them
 	for i, line := range lines {
 		v.ap.WriteAtStr(0, i, line)
 	}
@@ -57,7 +66,6 @@ func (v *Vi) Update() error {
 	if v.splash {
 		v.ap.WriteBoxed(v.ap.H/2-4, "Welcome to gvi (vi in go)!\n'ESC:q' to quit\nhjkl to move\nEsc, i, : to switch mode\ntry resize\n")
 	}
-	return nil
 }
 
 func (v *Vi) CommandStatus() {
@@ -66,8 +74,8 @@ func (v *Vi) CommandStatus() {
 }
 
 func (v *Vi) UpdateStatus() {
-	v.ap.WriteAt(0, v.ap.H-2, "%s File: %s (%d lines) - Mode: %s - @%d,%d [%dx%d] %s",
-		ansipixels.Inverse, v.filename, v.buf.NumLines(), v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H,
+	v.ap.WriteAt(0, v.usableHeight, "%s File: %s (%d/%d lines) - %s - @%d,%d [%dx%d] %s",
+		ansipixels.Inverse, v.filename, v.cy+1+v.offset, v.buf.NumLines(), v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H,
 		ansipixels.Reset)
 	v.ap.ClearEndOfLine()
 	if v.cmdMode == CommandMode {
@@ -79,14 +87,39 @@ func (v *Vi) UpdateStatus() {
 	}
 }
 
+func (v *Vi) VScroll(delta int) {
+	v.cy += delta
+	if v.cy < 0 {
+		v.offset = max(0, v.offset+v.cy)
+		v.cy = 0
+		v.Update() // only if we scrolled. (in theory... shouldn't update at <0 etc).
+	} else if v.cy >= v.usableHeight {
+		v.offset = min(v.buf.NumLines()-v.usableHeight, v.offset+v.cy-v.usableHeight+1)
+		v.cy = v.usableHeight - 1 // Keep cursor within bounds
+		v.Update()
+	}
+}
+
 func (v *Vi) navigate(b byte) {
 	// scroll instead when reading edges
 	switch b {
 	case 'j':
-		v.cy = min(v.ap.H-3, v.cy+1) // Move cursor down
+		v.VScroll(1) // Move cursor down
 	case 'k':
-		v.cy = max(0, v.cy-1) // Move cursor up
-	case 'h':
+		v.VScroll(-1) // Move cursor up
+	case 4: // Ctrl-D
+		v.VScroll(v.usableHeight / 2) // Half page down
+	case 21: // Ctrl-U
+		v.VScroll(-v.usableHeight / 2) // Half page up
+	case 6: // Ctrl-F
+		v.VScroll(v.usableHeight) // Page down
+	case 2: // Ctrl-B
+		v.VScroll(-v.usableHeight) // Page up
+	case 12: // Ctrl-L - do like emacs and also recenter so we don't need "zz" for now
+		v.offset += v.cy - v.usableHeight/2 // Center the view
+		v.cy = v.usableHeight / 2           // Center cursor vertically
+		v.Update()
+	case 'h', 0x7f: // Backspace or 'h'
 		v.cx = max(0, v.cx-1) // Move cursor left
 	case 'l':
 		v.cx = min(v.ap.W-1, v.cx+1) // Move cursor right
@@ -139,6 +172,17 @@ func (v *Vi) Process() bool {
 		v.UpdateStatus()
 	case CommandMode:
 		v.inputBuf = bytes.TrimPrefix(v.inputBuf, []byte{':'}) // Remove extra leading ':', useful after error.
+		hasBackspace := bytes.IndexByte(v.inputBuf, '\x7f')
+		if hasBackspace == 0 {
+			v.cmdMode = NavMode // Switch back to navigation mode if backspace is pressed in command mode
+			v.ap.MoveCursor(v.cx, v.cy)
+			v.inputBuf = nil
+			v.UpdateStatus()
+			return true // Continue processing
+		}
+		if hasBackspace > 0 {
+			v.inputBuf = append(v.inputBuf[:hasBackspace-1], v.inputBuf[hasBackspace:]...) // erase character before the backspace
+		}
 		v.UpdateStatus()
 		hasEsc := v.HasEsc()
 		if hasEsc >= 0 {
@@ -165,17 +209,18 @@ func (v *Vi) Process() bool {
 		} else {
 			v.inputBuf = nil
 		}
+		// split by line (\r)
 		retPos := strings.IndexByte(str, '\r')
 		if retPos >= 0 {
 			str = str[:retPos] // Remove everything after the first carriage return
+			// TODO: handle str[retPos+1:]
 		}
-		// split by line (\r)
 		v.ap.WriteAtStr(v.cx, v.cy, str)
 		if retPos >= 0 {
 			v.cy++
 			v.cx = 0
 		} else {
-			v.cx += len(str) // Move cursor right by the length of the input
+			v.cx += len(str) // Move cursor right by the length of the input: TODO: screen width instead (#8)
 		}
 		v.UpdateStatus()
 	}
@@ -195,6 +240,6 @@ func (v *Vi) Open(filename string) {
 		v.ShowError("Error opening file", err)
 		return
 	}
-	_ = v.Update()
+	v.Update()
 	v.ap.WriteAt(0, v.ap.H-1, "%sOpened file: %s%s", ansipixels.Green, filename, ansipixels.Reset)
 }
