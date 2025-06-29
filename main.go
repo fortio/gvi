@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"os"
 
 	"fortio.org/cli"
@@ -14,6 +15,9 @@ func main() {
 }
 
 func Main() int {
+	cli.MinArgs = 0
+	cli.MaxArgs = 1
+	cli.ArgsHelp = "[filename]\t\tto edit a file, vi style"
 	cli.Main()
 	ap := ansipixels.NewAnsiPixels(20.)
 	err := ap.Open()
@@ -21,9 +25,12 @@ func Main() int {
 		return log.FErrf("Failed to open terminal: %v", err)
 	}
 	defer ap.Restore()
-	ed := vi.NewVi(ap)
-	ap.OnResize = ed.Update
+	vi := vi.NewVi(ap)
+	ap.OnResize = vi.Update
 	_ = ap.OnResize()
+	if flag.NArg() == 1 {
+		vi.Open(flag.Arg(0))
+	}
 	cont := true
 	for cont {
 		err = ap.ReadOrResizeOrSignal()
@@ -31,7 +38,7 @@ func Main() int {
 			return log.FErrf("Error reading terminal: %v", err)
 		}
 		if len(ap.Data) > 0 {
-			cont = ed.Process()
+			cont = vi.Process()
 		}
 	}
 	ap.MoveCursor(0, ap.H-1)

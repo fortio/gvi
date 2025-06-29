@@ -20,7 +20,7 @@ func (m Mode) String() string {
 	case NavMode:
 		return ansipixels.Cyan + "Navigation" + ansipixels.White
 	case CommandMode:
-		return ansipixels.Red + "Command" + ansipixels.White
+		return ansipixels.Yellow + "Command" + ansipixels.White
 	case InsertMode:
 		return ansipixels.Green + "Insert" + ansipixels.White
 	default:
@@ -33,26 +33,35 @@ type Vi struct {
 	ap       *ansipixels.AnsiPixels
 	filename string // Not used in this example, but could be used to track the file being edited
 	cx, cy   int    // Cursor position
-	buf      []byte // Buffer for partial input
+	inputBuf []byte // Buffer for partial input
+	buf      Buffer
+	splash   bool // Show splash screen on first refresh.
 }
 
 func NewVi(ap *ansipixels.AnsiPixels) *Vi {
 	return &Vi{
 		cmdMode:  NavMode,
 		ap:       ap,
-		filename: "...", // Placeholder for filename
+		filename: "...", // no filename case.
+		splash:   true,  // Show splash screen on first refresh.
 	}
 }
 
 func (v *Vi) Update() error {
 	v.ap.ClearScreen()
+	lines := v.buf.GetLines(0, v.ap.H-2) // Get the lines from the buffer and display them
+	for i, line := range lines {
+		v.ap.WriteAtStr(0, i, string(line))
+	}
 	v.UpdateStatus()
-	v.ap.WriteBoxed(v.ap.H/2-4, "Welcome to gvi (vi in go)!\n'ESC:q' to quit\nhjkl to move\nEsc, i, : to switch mode\ntry resize\n")
+	if v.splash {
+		v.ap.WriteBoxed(v.ap.H/2-4, "Welcome to gvi (vi in go)!\n'ESC:q' to quit\nhjkl to move\nEsc, i, : to switch mode\ntry resize\n")
+	}
 	return nil
 }
 
 func (v *Vi) CommandStatus() {
-	v.ap.WriteAt(0, v.ap.H-1, ":%s", string(v.buf))
+	v.ap.WriteAt(0, v.ap.H-1, ":%s", string(v.inputBuf))
 	v.ap.ClearEndOfLine()
 }
 
@@ -111,7 +120,7 @@ func (v *Vi) command(data []byte) bool {
 
 func (v *Vi) HasEsc() int {
 	// Check if the buffer contains an escape character
-	return bytes.IndexByte(v.buf, '\x1b')
+	return bytes.IndexByte(v.inputBuf, '\x1b')
 }
 
 func (v *Vi) Process() bool {
@@ -119,40 +128,41 @@ func (v *Vi) Process() bool {
 	if len(v.ap.Data) == 0 {
 		return true // No input, continue
 	}
-	v.buf = append(v.buf, v.ap.Data...) // Append new data to buffer
+	v.splash = false                              // No splash screen after first input
+	v.inputBuf = append(v.inputBuf, v.ap.Data...) // Append new data to buffer
 	switch v.cmdMode {
 	case NavMode:
-		c := v.buf[0]
-		v.buf = v.buf[1:] // Remove the first byte for processing
+		c := v.inputBuf[0]
+		v.inputBuf = v.inputBuf[1:] // Remove the first byte for processing
 		v.navigate(c)
 		v.UpdateStatus()
 	case CommandMode:
-		v.buf = bytes.TrimPrefix(v.buf, []byte{':'}) // Remove extra leading ':', useful after error.
+		v.inputBuf = bytes.TrimPrefix(v.inputBuf, []byte{':'}) // Remove extra leading ':', useful after error.
 		v.UpdateStatus()
 		hasEsc := v.HasEsc()
 		if hasEsc >= 0 {
-			v.cmdMode = NavMode          // Switch back to navigation mode on escape
-			v.buf = v.buf[hasEsc+1:]     // Remove the escape sequence
-			v.ap.MoveCursor(0, v.ap.H-1) // Move cursor to the command line
+			v.cmdMode = NavMode                // Switch back to navigation mode on escape
+			v.inputBuf = v.inputBuf[hasEsc+1:] // Remove the escape sequence
+			v.ap.MoveCursor(0, v.ap.H-1)       // Move cursor to the command line
 			v.ap.ClearEndOfLine()
 			break
 		}
-		ret := bytes.IndexByte(v.buf, '\r')
+		ret := bytes.IndexByte(v.inputBuf, '\r')
 		if ret >= 0 {
-			data := v.buf[:ret]   // Get the command input up to the carriage return
-			v.buf = v.buf[ret+1:] // Remove the command input from
+			data := v.inputBuf[:ret]        // Get the command input up to the carriage return
+			v.inputBuf = v.inputBuf[ret+1:] // Remove the command input from
 			cont = v.command(data)
 		}
 	case InsertMode:
 		// Handle insert mode input (e.g., add to buffer)
-		str := string(v.buf) // probably ansiclean actually
+		str := string(v.inputBuf) // probably ansiclean actually
 		hasEsc := v.HasEsc()
 		if hasEsc >= 0 {
-			v.cmdMode = NavMode      // Switch back to navigation mode on escape
-			str = str[:hasEsc]       // Get the string up to the escape character
-			v.buf = v.buf[hasEsc+1:] // Remove the escape sequence
+			v.cmdMode = NavMode                // Switch back to navigation mode on escape
+			str = str[:hasEsc]                 // Get the string up to the escape character
+			v.inputBuf = v.inputBuf[hasEsc+1:] // Remove the escape sequence
 		} else {
-			v.buf = nil
+			v.inputBuf = nil
 		}
 		retPos := strings.IndexByte(str, '\r')
 		if retPos >= 0 {
@@ -169,4 +179,21 @@ func (v *Vi) Process() bool {
 		v.UpdateStatus()
 	}
 	return cont // Continue processing or not if command was 'q'
+}
+
+func (v *Vi) ShowError(msg string, err error) {
+	v.ap.WriteAt(0, v.ap.H-1, "%s%s: %v%s", ansipixels.Red, msg, err, ansipixels.Reset)
+}
+
+func (v *Vi) Open(filename string) {
+	v.filename = filename
+	v.splash = false // No splash screen when opening a file
+	v.UpdateStatus()
+	err := v.buf.Open(filename)
+	if err != nil {
+		v.ShowError("Error opening file", err)
+		return
+	}
+	_ = v.Update()
+	v.ap.WriteAt(0, v.ap.H-1, "%sOpened file: %s%s", ansipixels.Green, filename, ansipixels.Reset)
 }
