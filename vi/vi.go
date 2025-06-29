@@ -51,7 +51,7 @@ func (v *Vi) Update() error {
 	v.ap.ClearScreen()
 	lines := v.buf.GetLines(0, v.ap.H-2) // Get the lines from the buffer and display them
 	for i, line := range lines {
-		v.ap.WriteAtStr(0, i, string(line))
+		v.ap.WriteAtStr(0, i, line)
 	}
 	v.UpdateStatus()
 	if v.splash {
