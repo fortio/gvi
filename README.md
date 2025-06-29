@@ -8,7 +8,7 @@ For now it's more like "Demo of how to create something that looks/feel a bit li
 
 ## Install
 
-Set binary [releases](releases/)
+Get one of binary [releases](https://github.com/fortio/gvi/releases)
 
 Or from go:
 ```sh
