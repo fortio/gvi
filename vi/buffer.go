@@ -16,7 +16,7 @@ type Buffer struct {
 
 // Open initializes the buffer with the contents of the file.
 func (b *Buffer) Open(filename string) error {
-	f, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0666)
+	f, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0o666)
 	if err != nil {
 		return err
 	}

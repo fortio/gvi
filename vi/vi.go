@@ -80,15 +80,16 @@ func (v *Vi) UpdateStatus() {
 }
 
 func (v *Vi) navigate(b byte) {
+	// scroll instead when reading edges
 	switch b {
 	case 'j':
-		v.cy++ // Move cursor down
+		v.cy = min(v.ap.H-3, v.cy+1) // Move cursor down
 	case 'k':
-		v.cy-- // Move cursor up
+		v.cy = max(0, v.cy-1) // Move cursor up
 	case 'h':
-		v.cx-- // Move cursor left
+		v.cx = max(0, v.cx-1) // Move cursor left
 	case 'l':
-		v.cx++ // Move cursor right
+		v.cx = min(v.ap.W-1, v.cx+1) // Move cursor right
 	case 'i':
 		v.cmdMode = InsertMode
 	case ':':
