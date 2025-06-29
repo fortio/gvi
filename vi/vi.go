@@ -75,7 +75,7 @@ func (v *Vi) CommandStatus() {
 
 func (v *Vi) UpdateStatus() {
 	v.ap.WriteAt(0, v.usableHeight, "%s File: %s (%d/%d lines) - %s - @%d,%d [%dx%d] %s",
-		ansipixels.Inverse, v.filename, v.cx+1+v.offset, v.buf.NumLines(), v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H,
+		ansipixels.Inverse, v.filename, v.cy+1+v.offset, v.buf.NumLines(), v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H,
 		ansipixels.Reset)
 	v.ap.ClearEndOfLine()
 	if v.cmdMode == CommandMode {
@@ -90,12 +90,12 @@ func (v *Vi) UpdateStatus() {
 func (v *Vi) VScroll(delta int) {
 	v.cy += delta
 	if v.cy < 0 {
+		v.offset = max(0, v.offset+v.cy)
 		v.cy = 0
-		v.offset = max(0, v.offset-1)
 		v.Update() // only if we scrolled. (in theory... shouldn't update at <0 etc).
 	} else if v.cy >= v.usableHeight {
+		v.offset = min(v.buf.NumLines()-v.usableHeight, v.offset+v.cy-v.usableHeight+1)
 		v.cy = v.usableHeight - 1 // Keep cursor within bounds
-		v.offset = min(v.buf.NumLines()-v.usableHeight, v.offset+1)
 		v.Update()
 	}
 }
@@ -115,7 +115,11 @@ func (v *Vi) navigate(b byte) {
 		v.VScroll(v.usableHeight) // Page down
 	case 2: // Ctrl-B
 		v.VScroll(-v.usableHeight) // Page up
-	case 'h':
+	case 12: // Ctrl-L - do like emacs and also recenter so we don't need "zz" for now
+		v.offset += v.cy - v.usableHeight/2 // Center the view
+		v.cy = v.usableHeight / 2           // Center cursor vertically
+		v.Update()
+	case 'h', 0x7f: // Backspace or 'h'
 		v.cx = max(0, v.cx-1) // Move cursor left
 	case 'l':
 		v.cx = min(v.ap.W-1, v.cx+1) // Move cursor right
@@ -168,6 +172,17 @@ func (v *Vi) Process() bool {
 		v.UpdateStatus()
 	case CommandMode:
 		v.inputBuf = bytes.TrimPrefix(v.inputBuf, []byte{':'}) // Remove extra leading ':', useful after error.
+		hasBackspace := bytes.IndexByte(v.inputBuf, '\x7f')
+		if hasBackspace == 0 {
+			v.cmdMode = NavMode // Switch back to navigation mode if backspace is pressed in command mode
+			v.ap.MoveCursor(v.cx, v.cy)
+			v.inputBuf = nil
+			v.UpdateStatus()
+			return true // Continue processing
+		}
+		if hasBackspace > 0 {
+			v.inputBuf = append(v.inputBuf[:hasBackspace-1], v.inputBuf[hasBackspace:]...) // erase character before the backspace
+		}
 		v.UpdateStatus()
 		hasEsc := v.HasEsc()
 		if hasEsc >= 0 {
@@ -194,17 +209,18 @@ func (v *Vi) Process() bool {
 		} else {
 			v.inputBuf = nil
 		}
+		// split by line (\r)
 		retPos := strings.IndexByte(str, '\r')
 		if retPos >= 0 {
 			str = str[:retPos] // Remove everything after the first carriage return
+			// TODO: handle str[retPos+1:]
 		}
-		// split by line (\r)
 		v.ap.WriteAtStr(v.cx, v.cy, str)
 		if retPos >= 0 {
 			v.cy++
 			v.cx = 0
 		} else {
-			v.cx += len(str) // Move cursor right by the length of the input
+			v.cx += len(str) // Move cursor right by the length of the input: TODO: screen width instead (#8)
 		}
 		v.UpdateStatus()
 	}
