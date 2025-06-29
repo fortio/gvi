@@ -66,8 +66,8 @@ func (v *Vi) CommandStatus() {
 }
 
 func (v *Vi) UpdateStatus() {
-	v.ap.WriteAt(0, v.ap.H-2, "%s File: %s - Mode: %s - @%d,%d [%dx%d] %s",
-		ansipixels.Inverse, v.filename, v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H,
+	v.ap.WriteAt(0, v.ap.H-2, "%s File: %s (%d lines) - Mode: %s - @%d,%d [%dx%d] %s",
+		ansipixels.Inverse, v.filename, v.buf.NumLines(), v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H,
 		ansipixels.Reset)
 	v.ap.ClearEndOfLine()
 	if v.cmdMode == CommandMode {

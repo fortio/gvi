@@ -11,7 +11,7 @@ import (
 // A view of it is shown in the terminal.
 type Buffer struct {
 	f     *os.File // File handle for the buffer
-	lines [][]byte
+	lines []string
 }
 
 // Open initializes the buffer with the contents of the file.
@@ -24,7 +24,7 @@ func (b *Buffer) Open(filename string) error {
 	// Split the file into lines
 	s := bufio.NewScanner(f)
 	for s.Scan() {
-		b.lines = append(b.lines, s.Bytes())
+		b.lines = append(b.lines, s.Text())
 	}
 	if err := s.Err(); err != nil {
 		return err
@@ -33,7 +33,7 @@ func (b *Buffer) Open(filename string) error {
 }
 
 // GetLines returns the lines in the buffer from start to end.
-func (b *Buffer) GetLines(start, end int) [][]byte {
+func (b *Buffer) GetLines(start, end int) []string {
 	if start < 0 {
 		start = 0
 	}
@@ -44,4 +44,15 @@ func (b *Buffer) GetLines(start, end int) [][]byte {
 		return nil // No lines to return
 	}
 	return b.lines[start:end]
+}
+
+func (b *Buffer) Close() error {
+	if b.f != nil {
+		return b.f.Close()
+	}
+	return nil
+}
+
+func (b *Buffer) NumLines() int {
+	return len(b.lines)
 }
