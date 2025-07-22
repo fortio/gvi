@@ -232,7 +232,7 @@ func (v *Vi) Process() bool {
 
 func (v *Vi) Insert(str string) (err error) {
 	v.ap.WriteAtStr(v.cx, v.cy, str)
-	v.cx, v.cy, err = v.ap.ReadCursorPos()
+	v.cx, v.cy, err = v.ap.ReadCursorPosXY()
 	return err
 }
 
