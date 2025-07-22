@@ -12,6 +12,7 @@ import (
 type Buffer struct {
 	f     *os.File // File handle for the buffer
 	lines []string
+	dirty bool // True if the buffer has unsaved changes
 }
 
 // Open initializes the buffer with the contents of the file.
@@ -56,4 +57,16 @@ func (b *Buffer) Close() error {
 
 func (b *Buffer) NumLines() int {
 	return len(b.lines)
+}
+
+func (b *Buffer) IsDirty() bool {
+	return b.dirty
+}
+
+func (b *Buffer) Insert(lineNum, at int, text string) {
+	if lineNum < 0 || lineNum > len(b.lines) {
+		return // Invalid line number
+	}
+	b.lines = append(b.lines[:lineNum], append([]string{text}, b.lines[lineNum:]...)...)
+	b.dirty = true
 }

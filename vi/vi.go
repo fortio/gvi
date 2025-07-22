@@ -57,6 +57,7 @@ func (v *Vi) UpdateRS() error {
 }
 
 func (v *Vi) Update() {
+	v.ap.StartSyncMode()
 	v.ap.ClearScreen()
 	lines := v.buf.GetLines(v.offset, v.usableHeight) // Get the lines from the buffer and display them
 	for i, line := range lines {
@@ -215,16 +216,24 @@ func (v *Vi) Process() bool {
 			str = str[:retPos] // Remove everything after the first carriage return
 			// TODO: handle str[retPos+1:]
 		}
-		v.ap.WriteAtStr(v.cx, v.cy, str)
+		err := v.Insert(str) // Insert the string into the buffer
+		if err != nil {
+			v.ShowError("Error inserting text", err)
+			return false // abort
+		}
 		if retPos >= 0 {
 			v.cy++
 			v.cx = 0
-		} else {
-			v.cx += len(str) // Move cursor right by the length of the input: TODO: screen width instead (#8)
 		}
 		v.UpdateStatus()
 	}
 	return cont // Continue processing or not if command was 'q'
+}
+
+func (v *Vi) Insert(str string) (err error) {
+	v.ap.WriteAtStr(v.cx, v.cy, str)
+	v.cx, v.cy, err = v.ap.ReadCursorPos()
+	return err
 }
 
 func (v *Vi) ShowError(msg string, err error) {
