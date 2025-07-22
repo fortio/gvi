@@ -141,7 +141,7 @@ func (v *Vi) navigate(b byte) {
 func (v *Vi) command(data []byte) bool {
 	cmd := string(data)
 	switch cmd {
-	case "q":
+	case "q", "q!":
 		v.ap.WriteAt(0, v.ap.H-1, "Exiting...\r\n")
 		return false // Exit the editor
 	case "w":
@@ -182,7 +182,8 @@ func (v *Vi) Process() bool {
 			return true // Continue processing
 		}
 		if hasBackspace > 0 {
-			v.inputBuf = append(v.inputBuf[:hasBackspace-1], v.inputBuf[hasBackspace:]...) // erase character before the backspace
+			// erase character before the backspace and the backspace itself
+			v.inputBuf = append(v.inputBuf[:hasBackspace-1], v.inputBuf[hasBackspace+1:]...)
 		}
 		v.UpdateStatus()
 		hasEsc := v.HasEsc()
