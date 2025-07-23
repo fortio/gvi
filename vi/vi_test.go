@@ -18,6 +18,7 @@ func TestFilterSpecialChars(t *testing.T) {
 		{"Smiley 😊 :) \x02", "Smiley 😊 :) "},
 		{"\x01\x02\x03", ""},
 		{"A\x00B", "AB"},
+		{"A\tB", "A\tB"},
 	}
 	for _, test := range tests {
 		output := vi.FilterSpecialChars(test.input)

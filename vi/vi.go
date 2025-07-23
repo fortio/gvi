@@ -204,7 +204,7 @@ func FilterSpecialChars(str string) string {
 	var runes []rune
 	orunes := []rune(str) // Convert string to rune slice for proper handling of Unicode characters
 	for i, r := range orunes {
-		if r < 32 || r == 127 { // Filter out control characters and backspace
+		if (r < 32 && r != '\t') || r == 127 { // Filter out control characters and backspace but not tab.
 			if !changed {
 				changed = true                         // We are changing the string
 				runes = make([]rune, 0, len(orunes)-1) // Initialize runes with capacity
@@ -224,12 +224,29 @@ func FilterSpecialChars(str string) string {
 }
 
 func (v *Vi) Process() bool {
+	// Process the input buffer and update the state
 	cont := true
 	if len(v.ap.Data) == 0 {
-		return true // No input, continue
+		return cont // No input, continue
 	}
-	v.splash = false                              // No splash screen after first input
+	if v.splash {
+		v.splash = false // No splash screen after first input
+		v.Update()
+	}
 	v.inputBuf = append(v.inputBuf, v.ap.Data...) // Append new data to buffer
+	for len(v.inputBuf) > 0 {
+		cont = v.ProcessOne()
+		// command mode does leave currently typed so far input in the inputBuf but other modes
+		// need to consume all input (like a large paste in insert mode)
+		if !cont || v.cmdMode == CommandMode {
+			break
+		}
+	}
+	return cont // Continue processing or not if command was 'q'
+}
+
+func (v *Vi) ProcessOne() bool {
+	cont := true
 	switch v.cmdMode {
 	case NavMode:
 		c := v.inputBuf[0]
@@ -267,7 +284,7 @@ func (v *Vi) Process() bool {
 		}
 	case InsertMode:
 		// Handle insert mode input (e.g., add to buffer)
-		str := string(v.inputBuf) // probably ansiclean actually
+		str := string(v.inputBuf)
 		hasEsc := v.HasEsc()
 		if hasEsc >= 0 {
 			v.cmdMode = NavMode                // Switch back to navigation mode on escape
@@ -282,8 +299,8 @@ func (v *Vi) Process() bool {
 		// split by line (\r)
 		retPos := strings.IndexByte(str, '\r')
 		if retPos >= 0 {
-			str = str[:retPos] // Remove everything after the first carriage return
-			// TODO: handle str[retPos+1:]
+			v.inputBuf = []byte(str[retPos+1:]) // Keep the rest of the input after the carriage return
+			str = str[:retPos]                  // Remove everything after the first carriage return
 			if len(str) == 0 {
 				v.cy++
 				v.cx = 0
