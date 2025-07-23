@@ -4,6 +4,7 @@ package vi
 
 import (
 	"bufio"
+	"errors"
 	"os"
 	"strings"
 )
@@ -72,14 +73,49 @@ func (b *Buffer) InsertLine(lineNum int, text string) {
 	b.dirty = true
 }
 
-func (b *Buffer) InsertChars(lineNum, at int, text string) {
-	if lineNum < 0 || lineNum > len(b.lines) {
-		return // Invalid line number
+// Returns the rest of the line when inserting mid line.
+func (b *Buffer) InsertChars(lineNum, at int, text string) string {
+	if lineNum < 0 {
+		panic("negative line number")
+	}
+	b.dirty = true
+	if lineNum >= len(b.lines) {
+		for i := len(b.lines); i < lineNum; i++ {
+			b.lines = append(b.lines, "")
+		}
+		b.lines = append(b.lines, strings.Repeat(" ", at)+text)
+		return ""
 	}
 	line := b.lines[lineNum]
 	if at > len(line) {
 		line += strings.Repeat(" ", at-len(line))
 	}
 	b.lines[lineNum] = line[:at] + text + line[at:]
-	b.dirty = true
+	return line[at:] // Return the rest of the line
+}
+
+func (b *Buffer) Save() error {
+	if b.f == nil {
+		return errors.New("no file to save")
+	}
+	if !b.dirty {
+		return nil // No changes to save
+	}
+	_, err := b.f.Seek(0, 0) // Reset file pointer to the beginning
+	if err != nil {
+		return err
+	}
+	var written int64
+	var n int
+	for _, line := range b.lines {
+		if n, err = b.f.WriteString(line + "\n"); err != nil {
+			return err
+		}
+		written += int64(n)
+	}
+	if err := b.f.Truncate(written); err != nil {
+		return err
+	}
+	b.dirty = false // Reset dirty flag after saving
+	return nil
 }

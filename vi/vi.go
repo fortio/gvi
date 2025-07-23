@@ -38,6 +38,7 @@ type Vi struct {
 	splash       bool // Show splash screen on first refresh.
 	offset       int  // Offset in lines for scrolling.
 	usableHeight int  // v.ap.H - 2
+	keepMessage  bool // Clear command/message line after processing input or not.
 }
 
 func NewVi(ap *ansipixels.AnsiPixels) *Vi {
@@ -86,9 +87,12 @@ func (v *Vi) UpdateStatus() {
 	if v.cmdMode == CommandMode {
 		v.CommandStatus()
 	} else {
-		v.ap.MoveCursor(0, v.ap.H-1)
-		v.ap.ClearEndOfLine()
+		if !v.keepMessage {
+			v.ap.MoveCursor(0, v.ap.H-1)
+			v.ap.ClearEndOfLine()
+		}
 		v.ap.MoveCursor(v.cx, v.cy)
+		v.keepMessage = false // Clear status line only if not in command mode
 	}
 }
 
@@ -148,17 +152,40 @@ func (v *Vi) navigate(b byte) {
 
 func (v *Vi) command(data []byte) bool {
 	cmd := string(data)
+	cont := true
 	switch cmd {
-	case "q", "q!":
-		v.ap.WriteAt(0, v.ap.H-1, "Exiting...\r\n")
-		return false // Exit the editor
+	case "q!":
+		v.ap.WriteAt(0, v.ap.H-1, "Exiting without saving...\r\n")
+		cont = false // Exit the editor
+	case "q":
+		if v.buf.IsDirty() {
+			v.ap.WriteAt(0, v.ap.H-1, "Use :wq to save and exit. :q! to exit without saving.")
+		} else {
+			cont = false
+			v.ap.WriteAt(0, v.ap.H-1, "Exiting...\r\n")
+		}
+	case "wq":
+		cont = false
+		fallthrough
 	case "w":
-		v.ap.WriteAt(0, v.ap.H-1, "Write command not implemented yet")
+		if !v.buf.IsDirty() {
+			v.ap.WriteAt(0, v.ap.H-1, "No changes to save.")
+		} else {
+			err := v.buf.Save() // Save the buffer to the file
+			if err != nil {
+				v.ShowError("Error saving file", err)
+				cont = true // Stay in command mode
+			} else {
+				v.ap.WriteAt(0, v.ap.H-1, "File saved successfully.")
+				v.cmdMode = NavMode  // Switch back to navigation mode
+				v.keepMessage = true // Keep the message on the status line
+				v.UpdateStatus()     // Update status after saving
+			}
+		}
 	default:
 		v.ap.WriteAt(0, v.ap.H-1, "Unknown command: %q (:q to quit)", cmd)
 	}
-	// for now stay in command mode until esc
-	return true // Continue processing
+	return cont // Exit or Continue processing
 }
 
 func (v *Vi) HasEsc() int {
@@ -246,6 +273,9 @@ func (v *Vi) Process() bool {
 			v.cmdMode = NavMode                // Switch back to navigation mode on escape
 			str = str[:hasEsc]                 // Get the string up to the escape character
 			v.inputBuf = v.inputBuf[hasEsc+1:] // Remove the escape sequence
+			if len(v.inputBuf) == 0 {
+				break // No input left before escape
+			}
 		} else {
 			v.inputBuf = nil
 		}
@@ -254,6 +284,12 @@ func (v *Vi) Process() bool {
 		if retPos >= 0 {
 			str = str[:retPos] // Remove everything after the first carriage return
 			// TODO: handle str[retPos+1:]
+			if len(str) == 0 {
+				v.cy++
+				v.cx = 0
+				v.UpdateStatus()
+				break // No input to insert, just move cursor down without beeping for empty input
+			}
 		}
 		err := v.Insert(FilterSpecialChars(str)) // Insert the string into the buffer
 		if err != nil {
@@ -274,9 +310,12 @@ func (v *Vi) Insert(str string) (err error) {
 		v.Beep()   // only special characters/controls.
 		return nil // Nothing to insert
 	}
-	v.buf.InsertChars(v.cy+v.offset, v.cx, str) // Insert the string at the current cursor position
+	rest := v.buf.InsertChars(v.cy+v.offset, v.cx, str) // Insert the string at the current cursor position
 	v.ap.WriteAtStr(v.cx, v.cy, str)
 	v.cx, v.cy, err = v.ap.ReadCursorPosXY()
+	if rest != "" {
+		v.ap.WriteString(rest)
+	}
 	return err
 }
 
