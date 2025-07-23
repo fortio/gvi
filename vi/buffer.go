@@ -5,6 +5,7 @@ package vi
 import (
 	"bufio"
 	"os"
+	"strings"
 )
 
 // Buffer represents a full buffer (file) in the editor.
@@ -63,10 +64,22 @@ func (b *Buffer) IsDirty() bool {
 	return b.dirty
 }
 
-func (b *Buffer) Insert(lineNum, at int, text string) {
+func (b *Buffer) InsertLine(lineNum int, text string) {
 	if lineNum < 0 || lineNum > len(b.lines) {
 		return // Invalid line number
 	}
 	b.lines = append(b.lines[:lineNum], append([]string{text}, b.lines[lineNum:]...)...)
+	b.dirty = true
+}
+
+func (b *Buffer) InsertChars(lineNum, at int, text string) {
+	if lineNum < 0 || lineNum > len(b.lines) {
+		return // Invalid line number
+	}
+	line := b.lines[lineNum]
+	if at > len(line) {
+		line += strings.Repeat(" ", at-len(line))
+	}
+	b.lines[lineNum] = line[:at] + text + line[at:]
 	b.dirty = true
 }
