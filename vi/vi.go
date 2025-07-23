@@ -310,9 +310,12 @@ func (v *Vi) Insert(str string) (err error) {
 		v.Beep()   // only special characters/controls.
 		return nil // Nothing to insert
 	}
-	v.buf.InsertChars(v.cy+v.offset, v.cx, str) // Insert the string at the current cursor position
+	rest := v.buf.InsertChars(v.cy+v.offset, v.cx, str) // Insert the string at the current cursor position
 	v.ap.WriteAtStr(v.cx, v.cy, str)
 	v.cx, v.cy, err = v.ap.ReadCursorPosXY()
+	if rest != "" {
+		v.ap.WriteString(rest)
+	}
 	return err
 }
 

@@ -73,7 +73,8 @@ func (b *Buffer) InsertLine(lineNum int, text string) {
 	b.dirty = true
 }
 
-func (b *Buffer) InsertChars(lineNum, at int, text string) {
+// Returns the rest of the line when inserting mid line.
+func (b *Buffer) InsertChars(lineNum, at int, text string) string {
 	if lineNum < 0 {
 		panic("negative line number")
 	}
@@ -83,13 +84,14 @@ func (b *Buffer) InsertChars(lineNum, at int, text string) {
 			b.lines = append(b.lines, "")
 		}
 		b.lines = append(b.lines, strings.Repeat(" ", at)+text)
-		return
+		return ""
 	}
 	line := b.lines[lineNum]
 	if at > len(line) {
 		line += strings.Repeat(" ", at-len(line))
 	}
 	b.lines[lineNum] = line[:at] + text + line[at:]
+	return line[at:] // Return the rest of the line
 }
 
 func (b *Buffer) Save() error {
