@@ -96,7 +96,7 @@ func (b *Buffer) InsertChars(lineNum, at int, text string) string {
 
 func (b *Buffer) Save() error {
 	if b.f == nil {
-		return errors.New("No file to save")
+		return errors.New("no file to save")
 	}
 	if !b.dirty {
 		return nil // No changes to save
