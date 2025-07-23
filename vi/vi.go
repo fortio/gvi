@@ -229,7 +229,10 @@ func (v *Vi) Process() bool {
 	if len(v.ap.Data) == 0 {
 		return cont // No input, continue
 	}
-	v.splash = false                              // No splash screen after first input
+	if v.splash {
+		v.splash = false // No splash screen after first input
+		v.Update()
+	}
 	v.inputBuf = append(v.inputBuf, v.ap.Data...) // Append new data to buffer
 	for len(v.inputBuf) > 0 {
 		cont = v.ProcessOne()
