@@ -341,11 +341,14 @@ func (v *Vi) Insert(str string) (err error) {
 		v.Beep()   // only special characters/controls.
 		return nil // Nothing to insert
 	}
-	rest := v.buf.InsertChars(v.cy+v.offset, v.cx, str) // Insert the string at the current cursor position
+	lineNum := v.cy + v.offset
+	line := v.buf.InsertChars(v, lineNum, v.cx, str) // Insert the string at the current cursor position
 	v.ap.WriteAtStr(v.cx, v.cy, str)
 	v.cx, v.cy, err = v.ap.ReadCursorPosXY()
-	if rest != "" {
-		v.ap.WriteString(rest)
+	if line == "" {
+		v.ap.MoveHorizontally(0) // Move cursor to the start of the line
+		v.ap.ClearEndOfLine()
+		v.ap.WriteString(line) // Write the full line.
 	}
 	return err
 }
