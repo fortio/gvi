@@ -176,12 +176,18 @@ func (v *Vi) command(data []byte) bool {
 				v.ShowError("Error saving file", err)
 				cont = true // Stay in command mode
 			} else {
-				v.ap.WriteAt(0, v.ap.H-1, "File saved successfully.")
+				// TODO: in common with tabs etc... make a function to display result yet switch back to nav mode
+				v.ap.WriteAtStr(0, v.ap.H-1, "File saved successfully.")
 				v.cmdMode = NavMode  // Switch back to navigation mode
 				v.keepMessage = true // Keep the message on the status line
 				v.UpdateStatus()     // Update status after saving
 			}
 		}
+	case "tabs":
+		v.ap.WriteAt(0, v.ap.H-1, "Tabs: %v", v.UpdateTabs())
+		v.cmdMode = NavMode
+		v.keepMessage = true
+		v.UpdateStatus()
 	default:
 		v.ap.WriteAt(0, v.ap.H-1, "Unknown command: %q (:q to quit)", cmd)
 	}
