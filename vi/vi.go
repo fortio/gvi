@@ -39,6 +39,7 @@ type Vi struct {
 	offset       int  // Offset in lines for scrolling.
 	usableHeight int  // v.ap.H - 2
 	keepMessage  bool // Clear command/message line after processing input or not.
+	tabs         []int
 }
 
 func NewVi(ap *ansipixels.AnsiPixels) *Vi {
@@ -53,6 +54,7 @@ func NewVi(ap *ansipixels.AnsiPixels) *Vi {
 
 func (v *Vi) UpdateRS() error {
 	v.usableHeight = v.ap.H - 2
+	v.UpdateTabs()
 	v.Update()
 	return nil
 }
@@ -150,6 +152,17 @@ func (v *Vi) navigate(b byte) {
 	}
 }
 
+func (v *Vi) WriteBottom(msg string, args ...any) {
+	v.ap.WriteAt(0, v.ap.H-1, msg, args...)
+}
+
+func (v *Vi) CmdResult(msg string, args ...any) {
+	v.WriteBottom(msg, args...)
+	v.cmdMode = NavMode  // Switch back to navigation mode
+	v.keepMessage = true // Keep the message on the status line
+	v.UpdateStatus()     // Update status after saving
+}
+
 func (v *Vi) command(data []byte) bool {
 	cmd := string(data)
 	cont := true
@@ -159,17 +172,17 @@ func (v *Vi) command(data []byte) bool {
 		cont = false // Exit the editor
 	case "q":
 		if v.buf.IsDirty() {
-			v.ap.WriteAt(0, v.ap.H-1, "Use :wq to save and exit. :q! to exit without saving.")
+			v.WriteBottom("Use :wq to save and exit. :q! to exit without saving.")
 		} else {
 			cont = false
-			v.ap.WriteAt(0, v.ap.H-1, "Exiting...\r\n")
+			v.WriteBottom("Exiting...\r\n")
 		}
 	case "wq":
 		cont = false
 		fallthrough
 	case "w":
 		if !v.buf.IsDirty() {
-			v.ap.WriteAt(0, v.ap.H-1, "No changes to save.")
+			v.WriteBottom("No changes to save.")
 		} else {
 			err := v.buf.Save() // Save the buffer to the file
 			if err != nil {
@@ -177,19 +190,14 @@ func (v *Vi) command(data []byte) bool {
 				cont = true // Stay in command mode
 			} else {
 				// TODO: in common with tabs etc... make a function to display result yet switch back to nav mode
-				v.ap.WriteAtStr(0, v.ap.H-1, "File saved successfully.")
-				v.cmdMode = NavMode  // Switch back to navigation mode
-				v.keepMessage = true // Keep the message on the status line
-				v.UpdateStatus()     // Update status after saving
+				v.CmdResult("File saved successfully.")
 			}
 		}
 	case "tabs":
-		v.ap.WriteAt(0, v.ap.H-1, "Tabs: %v", v.UpdateTabs())
-		v.cmdMode = NavMode
-		v.keepMessage = true
-		v.UpdateStatus()
+		// v.UpdateTabs() // done on resize already.
+		v.CmdResult("Tabs: %v", v.tabs)
 	default:
-		v.ap.WriteAt(0, v.ap.H-1, "Unknown command: %q (:q to quit)", cmd)
+		v.WriteBottom("Unknown command: %q (:q to quit)", cmd)
 	}
 	return cont // Exit or Continue processing
 }
