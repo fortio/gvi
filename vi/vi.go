@@ -345,7 +345,7 @@ func (v *Vi) Insert(str string) (err error) {
 	line := v.buf.InsertChars(v, lineNum, v.cx, str) // Insert the string at the current cursor position
 	v.ap.WriteAtStr(v.cx, v.cy, str)
 	v.cx, v.cy, err = v.ap.ReadCursorPosXY()
-	if line == "" {
+	if line != "" {
 		v.ap.MoveHorizontally(0) // Move cursor to the start of the line
 		v.ap.ClearEndOfLine()
 		v.ap.WriteString(line) // Write the full line.
