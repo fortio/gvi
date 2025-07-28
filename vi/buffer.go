@@ -92,7 +92,9 @@ func (b *Buffer) InsertChars(v *Vi, lineNum, at int, text string) string {
 	atOffset := v.ScreenAtToRune(at, line) // Convert screen position to byte offset
 	returnLine := false
 	if atOffset > len(line) {
-		line += strings.Repeat(" ", at-len(line))
+		// We're inserting beyond the end of the line content, need padding
+		lineScreenWidth := v.ScreenWidth(line) // Calculate screen width of the line
+		line += strings.Repeat(" ", at-lineScreenWidth)
 	} else if atOffset < len(line) {
 		returnLine = true // We are inserting in the middle of the line
 	}
