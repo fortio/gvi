@@ -101,7 +101,7 @@ func (v *Vi) NextTab(x int) int {
 // ScreenWidth calculates the screen width of a string, properly handling
 // tabs, control characters, and multi-rune grapheme clusters.
 func (v *Vi) ScreenWidth(str string) int {
-	return v.iterateGraphemes(str, func(offset, screenOffset, prevScreenOffset, consumed int) bool {
+	return v.iterateGraphemes(str, func(_, _, _, _ int) bool {
 		return false // Never stop iteration, just calculate the full width
 	})
 }
