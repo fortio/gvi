@@ -103,7 +103,7 @@ func (b *Buffer) InsertChars(v *Vi, lineNum, at int, text string) string {
 	if returnLine {
 		return line
 	}
-	return "" // was insert at the end, no line to return""
+	return "" // was insert at the end, no line to return
 }
 
 func (b *Buffer) Save() error {
