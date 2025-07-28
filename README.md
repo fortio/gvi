@@ -24,3 +24,12 @@ Or docker:
 ```
 docker run -ti fortio/gvi
 ```
+
+## Development
+
+For detailed development guidelines, Unicode handling, debugging instructions, and architecture documentation, see [DEVELOPMENT.md](DEVELOPMENT.md).
+
+Quick test command:
+```bash
+LOGGER_LEVEL=debug go test -count 1 -v ./...
+```

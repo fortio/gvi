@@ -10,40 +10,36 @@ import (
 // - offset: byte offset in the string where this element starts
 // - screenOffset: cumulative screen width up to and including this element
 // - prevScreenOffset: screen width before this element was processed
-// - cluster: the grapheme cluster, tab character ("\t"), or control character as a string
-// - width: screen width of this element (0 for control chars, tab width for tabs, etc.)
+// - consumed: number of bytes consumed by this element
 //
 // If the callback returns true, iteration stops early and the current screenOffset is returned.
 // If iteration completes normally, returns the total screen width of the string.
-func (v *Vi) iterateGraphemes(str string, fn func(offset, screenOffset, prevScreenOffset int, cluster string, width int) bool) int {
+func (v *Vi) iterateGraphemes(str string, fn func(offset, screenOffset, prevScreenOffset, consumed int) bool) int {
 	screenOffset := 0
 	offset := 0
 	state := -1 // Initial state for grapheme cluster iteration
 
 	for offset < len(str) {
 		prevScreenOffset := screenOffset
-
+		var consumed int
 		// Handle tab characters specially (tabs need custom width calculation)
 		if str[offset] == '\t' {
 			screenOffset = v.NextTab(screenOffset)
 			width := screenOffset - prevScreenOffset
-			if fn(offset, screenOffset, prevScreenOffset, "\t", width) {
-				return screenOffset
-			}
-			offset++
-			continue
+			log.LogVf("iterateGraphemes: offset=%d, for tab, screenOffset=%d, width=%d", offset, screenOffset, width)
+			consumed = 1 // Tab is always 1 byte
+		} else {
+			// Handle all characters (including control chars) with uniseg
+			cluster, _, width, newState := uniseg.FirstGraphemeClusterInString(str[offset:], state)
+			state = newState
+			screenOffset += width
+			log.LogVf("iterateGraphemes: offset=%d, cluster=%q, screenOffset=%d, width=%d", offset, cluster, screenOffset, width)
+			consumed = len(cluster) // Length of the grapheme cluster in bytes
 		}
-
-		// Handle all characters (including control chars) with uniseg
-		cluster, _, width, newState := uniseg.FirstGraphemeClusterInString(str[offset:], state)
-		state = newState
-		screenOffset += width
-
-		if fn(offset, screenOffset, prevScreenOffset, cluster, width) {
+		if fn(offset, screenOffset, prevScreenOffset, consumed) {
 			return screenOffset
 		}
-
-		offset += len(cluster) // Move to the next grapheme cluster
+		offset += consumed // Move to the next grapheme cluster
 	}
 
 	return screenOffset
@@ -59,17 +55,17 @@ func (v *Vi) ScreenAtToRune(x int, str string) int {
 	}
 
 	var result int
-	finalScreenOffset := v.iterateGraphemes(str, func(offset, screenOffset, prevScreenOffset int, cluster string, width int) bool {
-		log.LogVf("ScreenAtToRune: x=%d, offset=%d, cluster=%q, screenOffset=%d, width=%d", x, offset, cluster, screenOffset, width)
+	finalScreenOffset := v.iterateGraphemes(str, func(offset, screenOffset, prevScreenOffset, consumed int) bool {
+		log.LogVf("ScreenAtToRune: x=%d, offset=%d, screenOffset=%d", x, offset, screenOffset)
 
 		if screenOffset > x {
 			// If x falls within this grapheme cluster, insert after it
 			if prevScreenOffset <= x {
-				log.LogVf("ScreenAtToRune: x=%d falls within cluster %q at offset %d, inserting after (line %q)", x, cluster, offset, str)
-				result = offset + len(cluster) // Return position after this cluster
+				result = offset + consumed // Use the consumed bytes from iterator
+				log.LogVf("ScreenAtToRune: x=%d falls within element at offset %d, inserting after (line %q)", x, offset, str)
 			} else {
-				log.LogVf("ScreenAtToRune: x=%d reached at offset %d for cluster %q (line %q)", x, offset, cluster, str)
 				result = offset // Return the offset if the screen position is reached
+				log.LogVf("ScreenAtToRune: x=%d reached at offset %d (line %q)", x, offset, str)
 			}
 			return true // Stop iteration
 		}
@@ -105,7 +101,7 @@ func (v *Vi) NextTab(x int) int {
 // ScreenWidth calculates the screen width of a string, properly handling
 // tabs, control characters, and multi-rune grapheme clusters.
 func (v *Vi) ScreenWidth(str string) int {
-	return v.iterateGraphemes(str, func(offset, screenOffset, prevScreenOffset int, cluster string, width int) bool {
+	return v.iterateGraphemes(str, func(offset, screenOffset, prevScreenOffset, consumed int) bool {
 		return false // Never stop iteration, just calculate the full width
 	})
 }
