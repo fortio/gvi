@@ -88,7 +88,7 @@ func (b *Buffer) InsertChars(v *Vi, lineNum, at int, text string) string {
 		return ""
 	}
 	line := b.lines[lineNum]
-	// TODO: skip this (expensive stuff)when we're insert at end of line mode / remember.
+	// TODO: skip this (expensive stuff) when we're insert at end of line mode / remember.
 	atOffset := v.ScreenAtToRune(at, line) // Convert screen position to byte offset
 	returnLine := false
 	if atOffset > len(line) {
