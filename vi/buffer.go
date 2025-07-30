@@ -73,8 +73,9 @@ func (b *Buffer) InsertLine(lineNum int, text string) {
 	b.dirty = true
 }
 
-// Returns the rest of the line when inserting mid line.
-func (b *Buffer) InsertChars(lineNum, at int, text string) string {
+// Returns the full line if insert is in the middle, empty if that was already at the end.
+// It makes most common typing (at the end/append) faster.
+func (b *Buffer) InsertChars(v *Vi, lineNum, at int, text string) string {
 	if lineNum < 0 {
 		panic("negative line number")
 	}
@@ -87,11 +88,22 @@ func (b *Buffer) InsertChars(lineNum, at int, text string) string {
 		return ""
 	}
 	line := b.lines[lineNum]
-	if at > len(line) {
-		line += strings.Repeat(" ", at-len(line))
+	// TODO: skip this (expensive stuff) when we're insert at end of line mode / remember.
+	atOffset := v.ScreenAtToRune(at, line) // Convert screen position to byte offset
+	returnLine := false
+	if atOffset > len(line) {
+		// We're inserting beyond the end of the line content, need padding
+		lineScreenWidth := v.ScreenWidth(line) // Calculate screen width of the line
+		line += strings.Repeat(" ", at-lineScreenWidth)
+	} else if atOffset < len(line) {
+		returnLine = true // We are inserting in the middle of the line
 	}
-	b.lines[lineNum] = line[:at] + text + line[at:]
-	return line[at:] // Return the rest of the line
+	line = line[:atOffset] + text + line[atOffset:]
+	b.lines[lineNum] = line
+	if returnLine {
+		return line
+	}
+	return "" // was insert at the end, no line to return
 }
 
 func (b *Buffer) Save() error {
