@@ -31,7 +31,7 @@ func TestInsertSingleRune(t *testing.T) {
 			line = v.buf.InsertChars(v, 0, v.cx, string(r))
 			switch {
 			// approximation of 1 width for ascii and latin, works for what we have in tests and avoids
-			// circular assumptions of using uniseq to test code that uses uniseq.
+			// circular assumptions of using uniseq to test code that uses uniseg.
 			case r > ' ' && r < 0x1100:
 				v.cx++
 			case r == '\t':
