@@ -11,11 +11,15 @@ func TestInsertSingleRune(t *testing.T) {
 	// Test simple cases where each rune advances cursor by 1 (+ special case of tabs)
 	simpleTests := []string{
 		"a\tb",
+		"a\tbc",
 		"abc",
 		"a🎉",
 		"A乒乓B",
+		"A乒乓BéC",
 		"😀🎉",
+		"😀🎉x",
 		"a\001b", // Control character (Ctrl-A) with width 0
+		"a\001bc",
 	}
 	for _, str := range simpleTests {
 		v.buf.lines = nil // Reset the buffer lines
@@ -25,10 +29,17 @@ func TestInsertSingleRune(t *testing.T) {
 		runes := []rune(str)
 		for i, r := range runes {
 			line = v.buf.InsertChars(v, 0, v.cx, string(r))
-			if r > ' ' {
+			switch {
+			// approximation of 1 width for ascii and latin, works for what we have in tests and avoids
+			// circular assumptions of using uniseq to test code that uses uniseg.
+			case r > ' ' && r < 0x1100:
 				v.cx++
-			} else if r == '\t' {
+			case r == '\t':
 				v.cx = 4
+			case r < ' ':
+				// v.cx unchanged.
+			default:
+				v.cx += 2 // asian characters and smileys are double width
 			}
 			if line != "" {
 				t.Errorf("Expected empty line after inserting %q, got %q", string(r), line)
@@ -81,10 +92,26 @@ func TestInsertMultiRuneGraphemes(t *testing.T) {
 
 	// Insert 'y' at position 3
 	v.buf.InsertChars(v, 0, v.cx, "y")
+	// by not incrementing v.cx it means go back to before 'y', and insert 'A'
+	v.buf.InsertChars(v, 0, v.cx, "A")
+	// and one more (to see if the issue is just about "the end" or any insert off by one)
+	v.buf.InsertChars(v, 0, v.cx, "B")
 
-	expected = "x👩‍🚀y"
+	expected = "x👩‍🚀BAy"
 	actual = v.buf.lines[0]
 	if actual != expected {
 		t.Errorf("Multi-rune test 2: Expected %q got %q", expected, actual)
+	}
+
+	// Test: Insert past the end of line (with padding)
+	// Current line: "x👩‍🚀BAy" has screen width 6
+	// Insert 'Z' at screen position 10 (beyond the end)
+	v.cx = 10
+	v.buf.InsertChars(v, 0, v.cx, "Z")
+
+	expected = "x👩‍🚀BAy    Z" // 4 spaces of padding between 'y' and 'Z'
+	actual = v.buf.lines[0]
+	if actual != expected {
+		t.Errorf("Past-end insert test: Expected %q got %q", expected, actual)
 	}
 }
