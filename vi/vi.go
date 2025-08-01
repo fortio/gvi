@@ -134,10 +134,8 @@ func (v *Vi) navigate(b byte) {
 		// Center current line, with bounds checking
 		currentLine := v.cy + v.offset
 		maxLine := v.buf.NumLines() - 1
-		
 		// Clamp currentLine to valid range
 		currentLine = min(maxLine, currentLine)
-		
 		// Try to center, but respect bounds
 		v.offset = max(0, currentLine-v.usableHeight/2)
 		v.cy = currentLine - v.offset
