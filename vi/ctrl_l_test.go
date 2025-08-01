@@ -125,7 +125,7 @@ func TestCtrlLCenteringLongFile(t *testing.T) {
 	// Create a long file with many lines
 	v.buf.lines = make([]string, 50)
 	for i := range 50 {
-		v.buf.lines[i] = "line " + string(rune('0'+i))
+		v.buf.lines[i] = "line " + strconv.Itoa(i)
 	}
 
 	// Start at line 20 (middle of file)
