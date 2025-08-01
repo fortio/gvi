@@ -338,32 +338,23 @@ func (v *Vi) ProcessOne() bool {
 		if retPos >= 0 {
 			v.inputBuf = []byte(str[retPos+1:]) // Keep the rest of the input after the carriage return
 			str = str[:retPos]                  // Remove everything after the first carriage return
-			if len(str) == 0 {
-				// Just a newline - insert it into the buffer and move cursor
-				v.InsertNewline()
-				// Move cursor down and check if we need to scroll
-				v.VScrollWithoutUpdate(1)
-				v.cx = 0
-				// Always need full update when inserting newline (line splitting/shifting)
-				v.Update()
-				break // No input to insert, just move cursor down without beeping for empty input
+		}
+
+		// Insert any text content first
+		if len(str) > 0 {
+			err := v.Insert(FilterSpecialChars(str)) // Insert the string into the buffer
+			if err != nil {
+				v.ShowError("Error inserting text", err)
+				return false // abort
 			}
 		}
-		err := v.Insert(FilterSpecialChars(str)) // Insert the string into the buffer
-		if err != nil {
-			v.ShowError("Error inserting text", err)
-			return false // abort
-		}
+
+		// Handle newline if present
 		if retPos >= 0 {
-			// After inserting text, we need to insert a newline and move cursor
-			v.InsertNewline()
-			v.VScrollWithoutUpdate(1)
-			v.cx = 0
-			// Always need full update when inserting newline (line splitting/shifting)
-			v.Update()
-			break // we already did a full update.
+			v.handleNewlineInsertion()
+		} else {
+			v.UpdateStatus() // Just update status if no newline
 		}
-		v.UpdateStatus()
 	}
 	return cont // Continue processing or not if command was 'q'
 }
@@ -413,6 +404,29 @@ func (v *Vi) InsertNewline() {
 	v.buf.ReplaceLine(currentLineNum, leftPart)
 	// Insert a new line with the right part
 	v.buf.InsertLine(currentLineNum+1, rightPart)
+}
+
+// handleNewlineInsertion handles the insertion of a newline with optimized screen updates.
+func (v *Vi) handleNewlineInsertion() {
+	currentLineNum := v.cy + v.offset
+	currentLine := v.buf.GetLine(currentLineNum)
+	runeOffset := v.ScreenAtToRune(v.cx, currentLine)
+
+	// Check if we can do a fast update (no full screen redraw needed)
+	canFastUpdate := (currentLineNum >= v.buf.NumLines()-1) && // At or past end of file
+		(runeOffset >= len(currentLine)) // At or past end of line
+
+	v.InsertNewline()
+	scrolled := v.VScrollWithoutUpdate(1)
+	v.cx = 0
+
+	if scrolled || !canFastUpdate {
+		v.Update() // Full update needed for scrolling or line splitting
+	} else {
+		// Fast update: cursor positioning and status update only
+		// (cursor is already positioned correctly by VScrollWithoutUpdate)
+		v.UpdateStatus()
+	}
 }
 
 func (v *Vi) ShowError(msg string, err error) {
