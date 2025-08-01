@@ -432,7 +432,7 @@ func (v *Vi) handleNewlineInsertion() {
 		v.Update() // Full update needed for scrolling or line splitting
 	} else {
 		// Fast update: status update only (cursor already positioned correctly) and status update only
-		// (cursor is already positioned correctly by VScrollWithoutUpdate)
+		// Fast update: status update only (cursor is already positioned correctly by VScrollWithoutUpdate)
 		v.UpdateStatus()
 	}
 }
