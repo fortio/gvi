@@ -115,6 +115,18 @@ func (v *Vi) Beep() {
 	v.ap.WriteRune('\a') // Beep for unrecognized command or error
 }
 
+// calculateCenteredPosition returns the offset and cy values needed to center currentLine
+// on the screen. This is a pure function with no side effects.
+func (v *Vi) calculateCenteredPosition(currentLine, numLines int) (offset, cy int) {
+	maxLine := max(0, numLines-1) // file might be empty, let's not have -1 as last line.
+	// Clamp currentLine to valid range
+	currentLine = min(maxLine, currentLine)
+	// Try to center, but respect bounds
+	offset = max(0, currentLine-v.usableHeight/2)
+	cy = currentLine - offset
+	return offset, cy
+}
+
 func (v *Vi) navigate(b byte) {
 	// scroll instead when reading edges
 	switch b {
@@ -133,12 +145,7 @@ func (v *Vi) navigate(b byte) {
 	case 12: // Ctrl-L - do like emacs and also recenter so we don't need "zz" for now
 		// Center current line, with bounds checking
 		currentLine := v.cy + v.offset
-		maxLine := max(0, v.buf.NumLines()-1) // file might be empty, let's not have -1 as last line.
-		// Clamp currentLine to valid range
-		currentLine = min(maxLine, currentLine)
-		// Try to center, but respect bounds
-		v.offset = max(0, currentLine-v.usableHeight/2)
-		v.cy = currentLine - v.offset
+		v.offset, v.cy = v.calculateCenteredPosition(currentLine, v.buf.NumLines())
 		v.Update()
 	case 'h', 0x7f: // Backspace or 'h'
 		v.cx = max(0, v.cx-1) // Move cursor left
