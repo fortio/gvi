@@ -28,6 +28,7 @@ func (v *Vi) iterateGraphemes(str string, fn func(offset, screenOffset, prevScre
 			width := screenOffset - prevScreenOffset
 			log.LogVf("iterateGraphemes: offset=%d, for tab, screenOffset=%d, width=%d", offset, screenOffset, width)
 			consumed = 1 // Tab is always 1 byte
+			state = -1   // Reset state after tab character
 		} else {
 			// Handle all characters (including control chars) with uniseg
 			cluster, _, width, newState := uniseg.FirstGraphemeClusterInString(str[offset:], state)
@@ -74,8 +75,12 @@ func (v *Vi) ScreenAtToRune(x int, str string) int {
 
 	if finalScreenOffset <= x {
 		// We've reached the end of the string
-		// Always insert at the end of the string, padding will be handled by the caller
-		result = len(str)
+		// If x equals the screen width, insert at the end
+		// If x is beyond the screen width, return offset that encodes padding needed
+		if x == finalScreenOffset {
+			return len(str) // Insert at the very end
+		}
+		result = len(str) + (x - finalScreenOffset) // Encode padding amount
 		log.LogVf("ScreenAtToRune: x=%d reached end (screen offset %d) (line %q): %d", x, finalScreenOffset, str, result)
 	}
 

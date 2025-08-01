@@ -34,6 +34,8 @@ func TestInsertSingleRune(t *testing.T) {
 				v.cx++
 			case r == '\t':
 				v.cx = 4
+			case r < ' ':
+				// v.cx unchanged.
 			default:
 				v.cx += 2 // asian characters and smileys are double width
 			}
@@ -97,5 +99,17 @@ func TestInsertMultiRuneGraphemes(t *testing.T) {
 	actual = v.buf.lines[0]
 	if actual != expected {
 		t.Errorf("Multi-rune test 2: Expected %q got %q", expected, actual)
+	}
+
+	// Test: Insert past the end of line (with padding)
+	// Current line: "x👩‍🚀BAy" has screen width 6
+	// Insert 'Z' at screen position 10 (beyond the end)
+	v.cx = 10
+	v.buf.InsertChars(v, 0, v.cx, "Z")
+
+	expected = "x👩‍🚀BAy    Z" // 4 spaces of padding between 'y' and 'Z'
+	actual = v.buf.lines[0]
+	if actual != expected {
+		t.Errorf("Past-end insert test: Expected %q got %q", expected, actual)
 	}
 }
