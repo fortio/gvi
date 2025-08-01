@@ -133,7 +133,7 @@ func (v *Vi) navigate(b byte) {
 	case 12: // Ctrl-L - do like emacs and also recenter so we don't need "zz" for now
 		// Center current line, with bounds checking
 		currentLine := v.cy + v.offset
-		maxLine := v.buf.NumLines() - 1
+		maxLine := max(0, v.buf.NumLines()-1) // file might be empty, let's not have -1 as last line.
 		// Clamp currentLine to valid range
 		currentLine = min(maxLine, currentLine)
 		// Try to center, but respect bounds

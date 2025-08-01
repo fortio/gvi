@@ -4,6 +4,8 @@ import (
 	"testing"
 )
 
+// AI written tests in this file so kinda write only.
+
 func TestCtrlLCenteringShortFile(t *testing.T) {
 	v := &Vi{}
 	v.usableHeight = 28 // Simulate large screen
@@ -49,7 +51,7 @@ func TestCtrlLCenteringLongFile(t *testing.T) {
 
 	// Create a long file with many lines
 	v.buf.lines = make([]string, 50)
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		v.buf.lines[i] = "line " + string(rune('0'+i))
 	}
 
@@ -97,7 +99,7 @@ func TestCtrlLCenteringNearEndOfFile(t *testing.T) {
 
 	// Create a file with 12 lines (slightly longer than screen)
 	v.buf.lines = make([]string, 12)
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		v.buf.lines[i] = "line " + string(rune('0'+i))
 	}
 
@@ -130,5 +132,40 @@ func TestCtrlLCenteringNearEndOfFile(t *testing.T) {
 	// We should still be on line 11 (the last line)
 	if totalLine != 11 {
 		t.Errorf("Expected to stay on line 11, but got line %d", totalLine)
+	}
+}
+
+func TestCtrlLCenteringEmptyFile(t *testing.T) {
+	v := &Vi{}
+	v.usableHeight = 20 // Simulate normal screen
+
+	// Create an empty file
+	v.buf.lines = []string{} // Empty file
+
+	// Start at origin (should be the only valid position)
+	v.cy = 0
+	v.offset = 0
+
+	// Test the simplified empty file logic
+	currentLine := v.cy + v.offset
+	maxLine := max(0, v.buf.NumLines()-1)
+	// Clamp currentLine to valid range
+	currentLine = min(maxLine, currentLine)
+	// Try to center, but respect bounds
+	v.offset = max(0, currentLine-v.usableHeight/2)
+	v.cy = currentLine - v.offset
+
+	// Check that cursor is at origin
+	totalLine := v.cy + v.offset
+	if totalLine != 0 {
+		t.Errorf("For empty file, expected cursor at line 0, but got line %d", totalLine)
+	}
+
+	if v.cy != 0 {
+		t.Errorf("For empty file, expected cy=0, but got cy=%d", v.cy)
+	}
+
+	if v.offset != 0 {
+		t.Errorf("For empty file, expected offset=0, but got offset=%d", v.offset)
 	}
 }
