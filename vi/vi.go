@@ -98,16 +98,26 @@ func (v *Vi) UpdateStatus() {
 	}
 }
 
-func (v *Vi) VScroll(delta int) {
+// VScrollWithoutUpdate moves the cursor and handles scrolling but doesn't force a full screen update.
+// Use this when you only need cursor movement and will handle the display update separately.
+func (v *Vi) VScrollWithoutUpdate(delta int) bool {
 	v.cy += delta
+	scrolled := false
 	if v.cy < 0 {
 		v.offset = max(0, v.offset+v.cy)
 		v.cy = 0
-		v.Update() // only if we scrolled. (in theory... shouldn't update at <0 etc).
+		scrolled = true
 	} else if v.cy >= v.usableHeight {
 		v.offset = min(v.buf.NumLines()-v.usableHeight, v.offset+v.cy-v.usableHeight+1)
 		v.cy = v.usableHeight - 1 // Keep cursor within bounds
-		v.Update()
+		scrolled = true
+	}
+	return scrolled // Return true if scrolling occurred
+}
+
+func (v *Vi) VScroll(delta int) {
+	if v.VScrollWithoutUpdate(delta) {
+		v.Update() // only if we scrolled. (in theory... shouldn't update at <0 etc).
 	}
 }
 
@@ -329,9 +339,13 @@ func (v *Vi) ProcessOne() bool {
 			v.inputBuf = []byte(str[retPos+1:]) // Keep the rest of the input after the carriage return
 			str = str[:retPos]                  // Remove everything after the first carriage return
 			if len(str) == 0 {
-				v.cy++
+				// Just a newline - insert it into the buffer and move cursor
+				v.InsertNewline()
+				// Move cursor down and check if we need to scroll
+				v.VScrollWithoutUpdate(1)
 				v.cx = 0
-				v.UpdateStatus()
+				// Always need full update when inserting newline (line splitting/shifting)
+				v.Update()
 				break // No input to insert, just move cursor down without beeping for empty input
 			}
 		}
@@ -341,8 +355,13 @@ func (v *Vi) ProcessOne() bool {
 			return false // abort
 		}
 		if retPos >= 0 {
-			v.cy++
+			// After inserting text, we need to insert a newline and move cursor
+			v.InsertNewline()
+			v.VScrollWithoutUpdate(1)
 			v.cx = 0
+			// Always need full update when inserting newline (line splitting/shifting)
+			v.Update()
+			break // we already did a full update.
 		}
 		v.UpdateStatus()
 	}
@@ -364,6 +383,36 @@ func (v *Vi) Insert(str string) (err error) {
 		v.ap.WriteString(line) // Write the full line.
 	}
 	return err
+}
+
+// InsertNewline handles inserting a newline at the current cursor position.
+// It splits the current line and creates a new line with the remaining text.
+func (v *Vi) InsertNewline() {
+	currentLineNum := v.cy + v.offset
+	// Ensure we have enough lines in the buffer
+	for currentLineNum >= v.buf.NumLines() {
+		v.buf.InsertLine(v.buf.NumLines(), "")
+	}
+	// Get the current line
+	currentLine := v.buf.GetLine(currentLineNum)
+	// Convert screen position to rune offset for proper Unicode handling
+	runeOffset := v.ScreenAtToRune(v.cx, currentLine)
+
+	// Split the line at cursor position
+	leftPart := ""
+	rightPart := ""
+	if runeOffset <= len(currentLine) {
+		leftPart = currentLine[:runeOffset]
+		rightPart = currentLine[runeOffset:]
+	} else {
+		// Cursor is beyond the line, pad with spaces
+		leftPart = currentLine + strings.Repeat(" ", runeOffset-len(currentLine))
+		rightPart = ""
+	}
+	// Update the current line with the left part
+	v.buf.ReplaceLine(currentLineNum, leftPart)
+	// Insert a new line with the right part
+	v.buf.InsertLine(currentLineNum+1, rightPart)
 }
 
 func (v *Vi) ShowError(msg string, err error) {

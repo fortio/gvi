@@ -54,6 +54,9 @@ func (v *Vi) ScreenAtToRune(x int, str string) int {
 	if x == 0 {
 		return 0 // No offset for the first rune
 	}
+	if len(str) == 0 {
+		return x // No content, return x as the offset
+	}
 
 	var result int
 	finalScreenOffset := v.iterateGraphemes(str, func(offset, screenOffset, prevScreenOffset, consumed int) bool {

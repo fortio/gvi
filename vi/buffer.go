@@ -107,6 +107,23 @@ func (b *Buffer) InsertChars(v *Vi, lineNum, at int, text string) string {
 	return "" // was insert at the end, no line to return
 }
 
+// ReplaceLine replaces the content of a line at the given line number.
+func (b *Buffer) ReplaceLine(lineNum int, newContent string) {
+	if lineNum < 0 || lineNum >= len(b.lines) {
+		panic("line number out of range")
+	}
+	b.lines[lineNum] = newContent
+	b.dirty = true
+}
+
+// GetLine returns the content of a single line.
+func (b *Buffer) GetLine(lineNum int) string {
+	if lineNum < 0 || lineNum >= len(b.lines) {
+		panic("line number out of range")
+	}
+	return b.lines[lineNum]
+}
+
 func (b *Buffer) Save() error {
 	if b.f == nil {
 		return errors.New("no file to save")
