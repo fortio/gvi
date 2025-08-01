@@ -26,6 +26,8 @@ func Main() int {
 	}
 	defer ap.Restore()
 	vi := vi.NewVi(ap)
+	// Enable grapheme clustering (cursor movement by only width of the grapheme cluster not codepoint/rune)
+	ap.WriteString("\033[?2027h")
 	ap.OnResize = vi.UpdateRS
 	_ = ap.OnResize()
 	if flag.NArg() == 1 {

@@ -60,7 +60,7 @@ func (v *Vi) ScreenAtToRune(x int, str string) int {
 
 		if screenOffset > x {
 			// If x falls within this grapheme cluster, insert after it
-			if prevScreenOffset <= x {
+			if prevScreenOffset < x {
 				result = offset + consumed // Use the consumed bytes from iterator
 				log.LogVf("ScreenAtToRune: x=%d falls within element at offset %d, inserting after (line %q)", x, offset, str)
 			} else {
@@ -74,12 +74,8 @@ func (v *Vi) ScreenAtToRune(x int, str string) int {
 
 	if finalScreenOffset <= x {
 		// We've reached the end of the string
-		// If x equals the screen width, insert at the end
-		// If x is beyond the screen width, insert with padding
-		if x == finalScreenOffset {
-			return len(str) // Insert at the very end
-		}
-		result = len(str) + (x - finalScreenOffset)
+		// Always insert at the end of the string, padding will be handled by the caller
+		result = len(str)
 		log.LogVf("ScreenAtToRune: x=%d reached end (screen offset %d) (line %q): %d", x, finalScreenOffset, str, result)
 	}
 
