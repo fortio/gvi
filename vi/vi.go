@@ -388,25 +388,19 @@ func (v *Vi) Insert(str string) (err error) {
 // It splits the current line and creates a new line with the remaining text.
 func (v *Vi) InsertNewline() {
 	currentLineNum := v.cy + v.offset
-	// Ensure we have enough lines in the buffer
-	for currentLineNum >= v.buf.NumLines() {
-		v.buf.InsertLine(v.buf.NumLines(), "")
-	}
-	// Get the current line
 	currentLine := v.buf.GetLine(currentLineNum)
+
 	// Convert screen position to rune offset for proper Unicode handling
 	runeOffset := v.ScreenAtToRune(v.cx, currentLine)
 
 	// Split the line at cursor position
-	leftPart := ""
-	rightPart := ""
+	var leftPart, rightPart string
 	if runeOffset <= len(currentLine) {
 		leftPart = currentLine[:runeOffset]
 		rightPart = currentLine[runeOffset:]
 	} else {
 		// Cursor is beyond the line, pad with spaces
 		leftPart = currentLine + strings.Repeat(" ", runeOffset-len(currentLine))
-		rightPart = ""
 	}
 	// Update the current line with the left part
 	v.buf.ReplaceLine(currentLineNum, leftPart)

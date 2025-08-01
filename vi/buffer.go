@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+// ScreenPositionCalculator provides screen position to byte offset translation.
+type ScreenPositionCalculator interface {
+	ScreenAtToRune(x int, str string) int
+}
+
 // Buffer represents a full buffer (file) in the editor.
 // A view of it is shown in the terminal.
 type Buffer struct {
@@ -75,21 +80,18 @@ func (b *Buffer) InsertLine(lineNum int, text string) {
 
 // Returns the full line if insert is in the middle, empty if that was already at the end.
 // It makes most common typing (at the end/append) faster.
-func (b *Buffer) InsertChars(v *Vi, lineNum, at int, text string) string {
+func (b *Buffer) InsertChars(calc ScreenPositionCalculator, lineNum, at int, text string) string {
 	if lineNum < 0 {
 		panic("negative line number")
 	}
 	b.dirty = true
-	if lineNum >= len(b.lines) {
-		for i := len(b.lines); i < lineNum; i++ {
-			b.lines = append(b.lines, "")
-		}
-		b.lines = append(b.lines, strings.Repeat(" ", at)+text)
-		return ""
+	// Pad with empty lines if inserting past the end of the buffer
+	for lineNum >= len(b.lines) {
+		b.lines = append(b.lines, "")
 	}
 	line := b.lines[lineNum]
 	// TODO: skip this (expensive stuff) when we're insert at end of line mode / remember.
-	atOffset := v.ScreenAtToRune(at, line) // Convert screen position to byte offset
+	atOffset := calc.ScreenAtToRune(at, line) // Convert screen position to byte offset
 	returnLine := false
 	if atOffset > len(line) {
 		// We're inserting beyond the end of the line content, need padding
@@ -108,9 +110,14 @@ func (b *Buffer) InsertChars(v *Vi, lineNum, at int, text string) string {
 }
 
 // ReplaceLine replaces the content of a line at the given line number.
+// Extends buffer with empty lines if necessary.
 func (b *Buffer) ReplaceLine(lineNum int, newContent string) {
-	if lineNum < 0 || lineNum >= len(b.lines) {
-		panic("line number out of range")
+	if lineNum < 0 {
+		panic("negative line number")
+	}
+	// Extend buffer if necessary
+	for lineNum >= len(b.lines) {
+		b.lines = append(b.lines, "")
 	}
 	b.lines[lineNum] = newContent
 	b.dirty = true
@@ -118,8 +125,11 @@ func (b *Buffer) ReplaceLine(lineNum int, newContent string) {
 
 // GetLine returns the content of a single line.
 func (b *Buffer) GetLine(lineNum int) string {
-	if lineNum < 0 || lineNum >= len(b.lines) {
+	if lineNum < 0 {
 		panic("line number out of range")
+	}
+	if lineNum >= len(b.lines) {
+		return "" // Return empty string if line number is out of range
 	}
 	return b.lines[lineNum]
 }
