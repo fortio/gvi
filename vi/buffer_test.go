@@ -15,7 +15,7 @@ func TestInsertSingleRune(t *testing.T) {
 		"abc",
 		"a🎉",
 		"A乒乓B",
-		"A乒乓BC",
+		"A乒乓BéC",
 		"😀🎉",
 		"😀🎉x",
 		"a\001b", // Control character (Ctrl-A) with width 0
@@ -30,7 +30,9 @@ func TestInsertSingleRune(t *testing.T) {
 		for i, r := range runes {
 			line = v.buf.InsertChars(v, 0, v.cx, string(r))
 			switch {
-			case r > ' ' && r < 256: // approximation of 1 width for ascii and latin
+			// approximation of 1 width for ascii and latin, works for what we have in tests and avoid
+			// circular assumptions of using uniseq to test code that uses uniseq.
+			case r > ' ' && r < 0x1100:
 				v.cx++
 			case r == '\t':
 				v.cx = 4
