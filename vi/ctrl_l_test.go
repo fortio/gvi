@@ -1,6 +1,7 @@
 package vi
 
 import (
+	"strconv"
 	"testing"
 )
 
