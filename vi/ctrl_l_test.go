@@ -174,7 +174,7 @@ func TestCtrlLCenteringNearEndOfFile(t *testing.T) {
 	// Create a file with 12 lines (slightly longer than screen)
 	v.buf.lines = make([]string, 12)
 	for i := range 12 {
-		v.buf.lines[i] = "line " + string(rune('0'+i))
+		v.buf.lines[i] = "line " + strconv.Itoa(i)
 	}
 
 	// Start near the end of the file (line 11, the last line)
