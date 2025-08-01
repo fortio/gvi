@@ -131,8 +131,16 @@ func (v *Vi) navigate(b byte) {
 	case 2: // Ctrl-B
 		v.VScroll(-v.usableHeight) // Page up
 	case 12: // Ctrl-L - do like emacs and also recenter so we don't need "zz" for now
-		v.offset += v.cy - v.usableHeight/2 // Center the view
-		v.cy = v.usableHeight / 2           // Center cursor vertically
+		// Center current line, with bounds checking
+		currentLine := v.cy + v.offset
+		maxLine := v.buf.NumLines() - 1
+		
+		// Clamp currentLine to valid range
+		currentLine = min(maxLine, currentLine)
+		
+		// Try to center, but respect bounds
+		v.offset = max(0, currentLine-v.usableHeight/2)
+		v.cy = currentLine - v.offset
 		v.Update()
 	case 'h', 0x7f: // Backspace or 'h'
 		v.cx = max(0, v.cx-1) // Move cursor left
