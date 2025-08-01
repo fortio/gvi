@@ -2,6 +2,7 @@ package vi // import "fortio.org/gvi/vi"
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 
 	"fortio.org/terminal/ansipixels"
@@ -40,6 +41,8 @@ type Vi struct {
 	usableHeight int  // v.ap.H - 2
 	keepMessage  bool // Clear command/message line after processing input or not.
 	tabs         []int
+	Debug        bool // Debug mode flag
+	fullRefresh  int  // Counter for full screen refreshes
 }
 
 func NewVi(ap *ansipixels.AnsiPixels) *Vi {
@@ -60,6 +63,7 @@ func (v *Vi) UpdateRS() error {
 }
 
 func (v *Vi) Update() {
+	v.fullRefresh++ // Increment full refresh counter
 	v.ap.StartSyncMode()
 	v.ap.ClearScreen()
 	lines := v.buf.GetLines(v.offset, v.usableHeight) // Get the lines from the buffer and display them
@@ -82,9 +86,13 @@ func (v *Vi) UpdateStatus() {
 	if v.buf.IsDirty() {
 		dirty = ansipixels.Purple + "*" + ansipixels.White
 	}
-	v.ap.WriteAt(0, v.usableHeight, "%s %sFile: %s (%d/%d lines) - %s - @%d,%d [%dx%d] %s",
-		ansipixels.Inverse, dirty, v.filename, v.cy+1+v.offset, v.buf.NumLines(), v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H,
-		ansipixels.Reset)
+	debugInfo := ""
+	if v.Debug {
+		debugInfo = fmt.Sprintf(" F:%d", v.fullRefresh)
+	}
+	v.ap.WriteAt(0, v.usableHeight, "%s %sFile: %s (%d/%d lines) - %s - @%d,%d [%dx%d]%s %s",
+		ansipixels.Inverse, dirty, v.filename, v.cy+1+v.offset, v.buf.NumLines(),
+		v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H, debugInfo, ansipixels.Reset)
 	v.ap.ClearEndOfLine()
 	if v.cmdMode == CommandMode {
 		v.CommandStatus()
@@ -423,7 +431,7 @@ func (v *Vi) handleNewlineInsertion() {
 	if scrolled || !canFastUpdate {
 		v.Update() // Full update needed for scrolling or line splitting
 	} else {
-		// Fast update: cursor positioning and status update only
+		// Fast update: status update only (cursor already positioned correctly) and status update only
 		// (cursor is already positioned correctly by VScrollWithoutUpdate)
 		v.UpdateStatus()
 	}
