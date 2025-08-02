@@ -198,9 +198,11 @@ func (v *Vi) navigate(b byte) {
 		}
 	case 'o': // new line below
 		v.AppendModeOn()
-		v.cx = 0
-		v.VScrollWithoutUpdate(1)
-		v.InsertNewlineAtOffset(0, v.BufferLineNumber(), "") // Insert a new line below the current one
+		v.handleNewlineInsertion()
+	case 'O': // new line above
+		v.AppendModeOn()
+		v.cy-- // need to work on first line too - no clamping.
+		v.handleNewlineInsertion()
 	case 'A':
 		// Append at end of line
 		currentLine := v.buf.GetLine(v.BufferLineNumber())
@@ -462,6 +464,14 @@ func (v *Vi) InsertNewlineAtOffset(runeOffset, currentLineNum int, currentLine s
 // handleNewlineInsertion handles the insertion of a newline with optimized screen updates.
 func (v *Vi) handleNewlineInsertion() {
 	currentLineNum := v.BufferLineNumber()
+	// Special case of insert at the top of file ('O' command at c.y==-1 offset 0)
+	if currentLineNum < 0 {
+		v.buf.InsertLine(0, "") // Insert a new line at the top
+		v.cy = 0                // Reset cursor to the first line
+		v.cx = 0                // Reset cursor to the start of the line
+		v.Update()              // Update the display after inserting the new line
+		return
+	}
 	currentLine := v.buf.GetLine(currentLineNum)
 
 	var runeOffset int
