@@ -48,7 +48,6 @@ type Vi struct {
 	fullRefresh    int  // Counter for full screen refreshes
 	screenWidthCnt int  // Counter for ScreenWidth calls
 	screenAtCnt    int  // Counter for ScreenAtToRune calls
-	appendMode     bool // Track if we're in append mode (at end of line)
 }
 
 func NewVi(ap *ansipixels.AnsiPixels) *Vi {
@@ -91,9 +90,6 @@ func (v *Vi) UpdateStatus() {
 	dirty := ""
 	if v.buf.IsDirty() {
 		dirty = ansipixels.Purple + "*" + ansipixels.White
-	}
-	if v.cmdMode == InsertMode && v.appendMode {
-		v.cmdMode = AppendMode // Show as append mode if we're in it
 	}
 	debugInfo := ""
 	if v.Debug {
@@ -138,6 +134,10 @@ func (v *Vi) VScroll(delta int) {
 	}
 }
 
+func (v *Vi) BufferLineNumber() int {
+	return v.cy + v.offset
+}
+
 func (v *Vi) Beep() {
 	v.ap.WriteRune('\a') // Beep for unrecognized command or error
 }
@@ -152,6 +152,19 @@ func (v *Vi) calculateCenteredPosition(currentLine, numLines int) (offset, cy in
 	offset = max(0, currentLine-v.usableHeight/2)
 	cy = currentLine - offset
 	return offset, cy
+}
+
+func (v *Vi) AppendModeOn() {
+	v.cmdMode = AppendMode
+}
+
+func (v *Vi) InsertModeOn() {
+	v.cmdMode = InsertMode
+}
+
+// Append() returns true if we are in optimized append mode (vs regular insert mode).
+func (v *Vi) Append() bool {
+	return v.cmdMode == AppendMode
 }
 
 func (v *Vi) navigate(b byte) {
@@ -171,8 +184,7 @@ func (v *Vi) navigate(b byte) {
 		v.VScroll(-v.usableHeight) // Page up
 	case 12: // Ctrl-L - do like emacs and also recenter so we don't need "zz" for now
 		// Center current line, with bounds checking
-		currentLine := v.cy + v.offset
-		v.offset, v.cy = v.calculateCenteredPosition(currentLine, v.buf.NumLines())
+		v.offset, v.cy = v.calculateCenteredPosition(v.BufferLineNumber(), v.buf.NumLines())
 		v.Update()
 	case 'h', 0x7f: // Backspace or 'h'
 		v.cx = max(0, v.cx-1) // Move cursor left
@@ -180,18 +192,20 @@ func (v *Vi) navigate(b byte) {
 		v.cx = min(v.ap.W-1, v.cx+1) // Move cursor right
 	case 'i':
 		if v.cx == 0 && v.EmptyLine() {
-			v.appendMode = true // really append (eg initial empty line and hit 'i')
-			v.cmdMode = AppendMode
+			v.AppendModeOn() // really append (eg initial empty line and hit 'i')
 		} else {
-			v.cmdMode = InsertMode
+			v.InsertModeOn()
 		}
+	case 'o': // new line below
+		v.AppendModeOn()
+		v.cx = 0
+		v.VScrollWithoutUpdate(1)
+		v.InsertNewlineAtOffset(0, v.BufferLineNumber(), "") // Insert a new line below the current one
 	case 'A':
 		// Append at end of line
-		currentLineNum := v.cy + v.offset
-		currentLine := v.buf.GetLine(currentLineNum)
+		currentLine := v.buf.GetLine(v.BufferLineNumber())
 		v.cx = v.ScreenWidth(currentLine) // Move cursor to end of line
-		v.cmdMode = AppendMode
-		v.appendMode = true // We're now in append mode
+		v.AppendModeOn()                  // We're now in append mode
 	case ':':
 		v.cmdMode = CommandMode
 		v.ap.WriteAtStr(0, v.ap.H-1, ":")
@@ -359,10 +373,10 @@ func (v *Vi) ProcessOne() bool {
 		hasEsc := v.HasEsc()
 		if hasEsc >= 0 {
 			v.cmdMode = NavMode                // Switch back to navigation mode on escape
-			v.appendMode = false               // Clear append mode
 			str = str[:hasEsc]                 // Get the string up to the escape character
 			v.inputBuf = v.inputBuf[hasEsc+1:] // Remove the escape sequence
 			if len(v.inputBuf) == 0 {
+				v.UpdateStatus()
 				break // No input left before escape
 			}
 		} else {
@@ -397,9 +411,9 @@ func (v *Vi) Insert(str string) {
 		v.Beep() // only special characters/controls.
 		return   // Nothing to insert
 	}
-	lineNum := v.cy + v.offset
+	lineNum := v.BufferLineNumber()
 	var line string
-	if v.appendMode {
+	if v.Append() {
 		v.buf.AppendToLine(lineNum, str)
 	} else {
 		line = v.buf.InsertChars(v, lineNum, v.cx, str) // Insert the string at the current cursor position
@@ -407,7 +421,7 @@ func (v *Vi) Insert(str string) {
 	v.ap.WriteAtStr(v.cx, v.cy, str)
 	v.cx, v.cy, _ = v.ap.ReadCursorPosXY()
 	if line == "" {
-		v.appendMode = true // If we inserted at the end of the line, switch to cheaper append mode
+		v.AppendModeOn() // If we inserted at the end of the line, switch to cheaper append mode
 	} else {
 		v.ap.MoveHorizontally(0) // Move cursor to the start of the line
 		v.ap.ClearEndOfLine()
@@ -418,7 +432,7 @@ func (v *Vi) Insert(str string) {
 // InsertNewline handles inserting a newline at the current cursor position.
 // It splits the current line and creates a new line with the remaining text.
 func (v *Vi) InsertNewline() {
-	currentLineNum := v.cy + v.offset
+	currentLineNum := v.BufferLineNumber()
 	currentLine := v.buf.GetLine(currentLineNum)
 
 	// Convert screen position to rune offset for proper Unicode handling
@@ -447,13 +461,13 @@ func (v *Vi) InsertNewlineAtOffset(runeOffset, currentLineNum int, currentLine s
 
 // handleNewlineInsertion handles the insertion of a newline with optimized screen updates.
 func (v *Vi) handleNewlineInsertion() {
-	currentLineNum := v.cy + v.offset
+	currentLineNum := v.BufferLineNumber()
 	currentLine := v.buf.GetLine(currentLineNum)
 
 	var runeOffset int
 	canFastUpdate := true
 
-	if v.appendMode {
+	if v.Append() {
 		// In append mode, we're at the end of the line - no need to calculate screen position
 		runeOffset = len(currentLine)
 	} else {
