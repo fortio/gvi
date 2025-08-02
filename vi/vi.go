@@ -14,6 +14,7 @@ const (
 	NavMode Mode = iota
 	CommandMode
 	InsertMode
+	AppendMode
 )
 
 func (m Mode) String() string {
@@ -24,6 +25,8 @@ func (m Mode) String() string {
 		return ansipixels.Yellow + "Command" + ansipixels.White
 	case InsertMode:
 		return ansipixels.Green + "Insert" + ansipixels.White
+	case AppendMode:
+		return ansipixels.Green + "Append" + ansipixels.White
 	default:
 		return "Unknown"
 	}
@@ -88,6 +91,9 @@ func (v *Vi) UpdateStatus() {
 	dirty := ""
 	if v.buf.IsDirty() {
 		dirty = ansipixels.Purple + "*" + ansipixels.White
+	}
+	if v.cmdMode == InsertMode && v.appendMode {
+		v.cmdMode = AppendMode // Show as append mode if we're in it
 	}
 	debugInfo := ""
 	if v.Debug {
@@ -173,14 +179,18 @@ func (v *Vi) navigate(b byte) {
 	case 'l':
 		v.cx = min(v.ap.W-1, v.cx+1) // Move cursor right
 	case 'i':
-		v.cmdMode = InsertMode
-		v.appendMode = false // Regular insert mode
+		if v.cx == 0 && v.EmptyLine() {
+			v.appendMode = true // really append (eg initial empty line and hit 'i')
+			v.cmdMode = AppendMode
+		} else {
+			v.cmdMode = InsertMode
+		}
 	case 'A':
 		// Append at end of line
 		currentLineNum := v.cy + v.offset
 		currentLine := v.buf.GetLine(currentLineNum)
 		v.cx = v.ScreenWidth(currentLine) // Move cursor to end of line
-		v.cmdMode = InsertMode
+		v.cmdMode = AppendMode
 		v.appendMode = true // We're now in append mode
 	case ':':
 		v.cmdMode = CommandMode
@@ -192,6 +202,11 @@ func (v *Vi) navigate(b byte) {
 		// beep
 		v.Beep() // Beep for unrecognized command
 	}
+}
+
+// EmptyLine checks if the current line is empty.
+func (v *Vi) EmptyLine() bool {
+	return v.buf.GetLine(v.cy+v.offset) == ""
 }
 
 func (v *Vi) WriteBottom(msg string, args ...any) {
@@ -338,7 +353,7 @@ func (v *Vi) ProcessOne() bool {
 			v.inputBuf = v.inputBuf[ret+1:] // Remove the command input from
 			cont = v.command(data)
 		}
-	case InsertMode:
+	case InsertMode, AppendMode:
 		// Handle insert mode input (e.g., add to buffer)
 		str := string(v.inputBuf)
 		hasEsc := v.HasEsc()
@@ -409,7 +424,13 @@ func (v *Vi) InsertNewline() {
 	// Convert screen position to rune offset for proper Unicode handling
 	runeOffset := v.ScreenAtToRune(v.cx, currentLine)
 
-	// Split the line at cursor position
+	v.InsertNewlineAtOffset(runeOffset, currentLineNum, currentLine)
+}
+
+// InsertNewlineAtOffset handles inserting a newline at a pre-calculated byte offset.
+// This avoids the expensive screen-position-to-byte-offset calculation when the offset is already known.
+func (v *Vi) InsertNewlineAtOffset(runeOffset, currentLineNum int, currentLine string) {
+	// Split the line at the specified offset
 	var leftPart, rightPart string
 	if runeOffset <= len(currentLine) {
 		leftPart = currentLine[:runeOffset]
@@ -428,13 +449,22 @@ func (v *Vi) InsertNewline() {
 func (v *Vi) handleNewlineInsertion() {
 	currentLineNum := v.cy + v.offset
 	currentLine := v.buf.GetLine(currentLineNum)
-	runeOffset := v.ScreenAtToRune(v.cx, currentLine)
 
-	// Check if we can do a fast update (no full screen redraw needed)
-	canFastUpdate := (currentLineNum >= v.buf.NumLines()-1) && // At or past end of file
-		(runeOffset >= len(currentLine)) // At or past end of line
+	var runeOffset int
+	canFastUpdate := true
 
-	v.InsertNewline()
+	if v.appendMode {
+		// In append mode, we're at the end of the line - no need to calculate screen position
+		runeOffset = len(currentLine)
+	} else {
+		// Only calculate screen position if we're not in append mode
+		runeOffset = v.ScreenAtToRune(v.cx, currentLine)
+		// Check if we can do a fast update (no full screen redraw needed)
+		canFastUpdate = (runeOffset >= len(currentLine)) // At or past end of line
+	}
+	canFastUpdate = canFastUpdate && (currentLineNum >= v.buf.NumLines()-1) // At or past end of file
+
+	v.InsertNewlineAtOffset(runeOffset, currentLineNum, currentLine)
 	scrolled := v.VScrollWithoutUpdate(1)
 	v.cx = 0
 
