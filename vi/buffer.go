@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+// ScreenPositionCalculator provides screen position to byte offset translation.
+type ScreenPositionCalculator interface {
+	ScreenAtToRune(x int, str string) int
+}
+
 // Buffer represents a full buffer (file) in the editor.
 // A view of it is shown in the terminal.
 type Buffer struct {
@@ -17,9 +22,23 @@ type Buffer struct {
 	dirty bool // True if the buffer has unsaved changes
 }
 
+// Doesn't overwrite existing files, returns false if file already exists.
+func (b *Buffer) OpenNewFile(filename string, overwrite bool) error {
+	mode := os.O_CREATE | os.O_WRONLY
+	if !overwrite {
+		mode |= os.O_EXCL
+	}
+	f, err := os.OpenFile(filename, mode, 0o644)
+	if err != nil {
+		return err
+	}
+	b.f = f
+	return nil
+}
+
 // Open initializes the buffer with the contents of the file.
 func (b *Buffer) Open(filename string) error {
-	f, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0o666)
+	f, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		return err
 	}
@@ -75,21 +94,20 @@ func (b *Buffer) InsertLine(lineNum int, text string) {
 
 // Returns the full line if insert is in the middle, empty if that was already at the end.
 // It makes most common typing (at the end/append) faster.
-func (b *Buffer) InsertChars(v *Vi, lineNum, at int, text string) string {
+// This is the expensive one (calculating screen offsets) but if it returns "" it means
+// the insertion was at the of the line and subsequent appends can be done faster using AppendToLine.
+func (b *Buffer) InsertChars(calc ScreenPositionCalculator, lineNum, at int, text string) string {
 	if lineNum < 0 {
 		panic("negative line number")
 	}
 	b.dirty = true
-	if lineNum >= len(b.lines) {
-		for i := len(b.lines); i < lineNum; i++ {
-			b.lines = append(b.lines, "")
-		}
-		b.lines = append(b.lines, strings.Repeat(" ", at)+text)
-		return ""
+	// Pad with empty lines if inserting past the end of the buffer
+	for lineNum >= len(b.lines) {
+		b.lines = append(b.lines, "")
 	}
 	line := b.lines[lineNum]
-	// TODO: skip this (expensive stuff) when we're insert at end of line mode / remember.
-	atOffset := v.ScreenAtToRune(at, line) // Convert screen position to byte offset
+
+	atOffset := calc.ScreenAtToRune(at, line) // Convert screen position to byte offset
 	returnLine := false
 	if atOffset > len(line) {
 		// We're inserting beyond the end of the line content, need padding
@@ -105,6 +123,47 @@ func (b *Buffer) InsertChars(v *Vi, lineNum, at int, text string) string {
 		return line
 	}
 	return "" // was insert at the end, no line to return
+}
+
+// AppendToLine appends text to the end of a line.
+// This is optimized for the common case of appending and skips screen position calculations.
+func (b *Buffer) AppendToLine(lineNum int, text string) {
+	if lineNum < 0 {
+		panic("negative line number")
+	}
+	b.dirty = true
+	// Pad with empty lines if inserting past the end of the buffer
+	for lineNum >= len(b.lines) {
+		b.lines = append(b.lines, "")
+	}
+	b.lines[lineNum] += text
+}
+
+// ReplaceLine replaces the content of a line at the given line number.
+// Extends buffer with empty lines if necessary.
+func (b *Buffer) ReplaceLine(lineNum int, newContent string) {
+	if lineNum < 0 {
+		panic("negative line number")
+	}
+	// Extend buffer if necessary
+	for lineNum >= len(b.lines) {
+		b.lines = append(b.lines, "")
+	}
+	b.lines[lineNum] = newContent
+	b.dirty = true
+}
+
+// GetLine returns the content of a single line.
+// Panics if lineNum is negative.
+// Returns an empty string if lineNum is greater than or equal to the number of lines in the buffer.
+func (b *Buffer) GetLine(lineNum int) string {
+	if lineNum < 0 {
+		panic("line number out of range")
+	}
+	if lineNum >= len(b.lines) {
+		return "" // Return empty string if line number is out of range
+	}
+	return b.lines[lineNum]
 }
 
 func (b *Buffer) Save() error {

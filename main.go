@@ -15,6 +15,7 @@ func main() {
 }
 
 func Main() int {
+	debug := flag.Bool("debug", false, "Enable debug mode to show refresh counters")
 	cli.MinArgs = 0
 	cli.MaxArgs = 1 // we can take n files later and implement :n
 	cli.ArgsHelp = "[filename]\t\tto edit a file, vi style"
@@ -26,6 +27,7 @@ func Main() int {
 	}
 	defer ap.Restore()
 	vi := vi.NewVi(ap)
+	vi.Debug = *debug
 	// Enable grapheme clustering (cursor movement by only width of the grapheme cluster not codepoint/rune)
 	ap.WriteString("\033[?2027h")
 	ap.OnResize = vi.UpdateRS

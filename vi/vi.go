@@ -2,6 +2,7 @@ package vi // import "fortio.org/gvi/vi"
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 
 	"fortio.org/terminal/ansipixels"
@@ -13,6 +14,7 @@ const (
 	NavMode Mode = iota
 	CommandMode
 	InsertMode
+	AppendMode
 )
 
 func (m Mode) String() string {
@@ -23,23 +25,29 @@ func (m Mode) String() string {
 		return ansipixels.Yellow + "Command" + ansipixels.White
 	case InsertMode:
 		return ansipixels.Green + "Insert" + ansipixels.White
+	case AppendMode:
+		return ansipixels.Green + "Append" + ansipixels.White
 	default:
 		return "Unknown"
 	}
 }
 
 type Vi struct {
-	cmdMode      Mode
-	ap           *ansipixels.AnsiPixels
-	filename     string // Not used in this example, but could be used to track the file being edited
-	cx, cy       int    // Cursor position
-	inputBuf     []byte // Buffer for partial input
-	buf          Buffer
-	splash       bool // Show splash screen on first refresh.
-	offset       int  // Offset in lines for scrolling.
-	usableHeight int  // v.ap.H - 2
-	keepMessage  bool // Clear command/message line after processing input or not.
-	tabs         []int
+	cmdMode        Mode
+	ap             *ansipixels.AnsiPixels
+	filename       string // Not used in this example, but could be used to track the file being edited
+	cx, cy         int    // Cursor position
+	inputBuf       []byte // Buffer for partial input
+	buf            Buffer
+	splash         bool // Show splash screen on first refresh.
+	offset         int  // Offset in lines for scrolling.
+	usableHeight   int  // v.ap.H - 2
+	keepMessage    bool // Clear command/message line after processing input or not.
+	tabs           []int
+	Debug          bool // Debug mode flag
+	fullRefresh    int  // Counter for full screen refreshes
+	screenWidthCnt int  // Counter for ScreenWidth calls
+	screenAtCnt    int  // Counter for ScreenAtToRune calls
 }
 
 func NewVi(ap *ansipixels.AnsiPixels) *Vi {
@@ -60,6 +68,7 @@ func (v *Vi) UpdateRS() error {
 }
 
 func (v *Vi) Update() {
+	v.fullRefresh++ // Increment full refresh counter
 	v.ap.StartSyncMode()
 	v.ap.ClearScreen()
 	lines := v.buf.GetLines(v.offset, v.usableHeight) // Get the lines from the buffer and display them
@@ -82,9 +91,13 @@ func (v *Vi) UpdateStatus() {
 	if v.buf.IsDirty() {
 		dirty = ansipixels.Purple + "*" + ansipixels.White
 	}
-	v.ap.WriteAt(0, v.usableHeight, "%s %sFile: %s (%d/%d lines) - %s - @%d,%d [%dx%d] %s",
-		ansipixels.Inverse, dirty, v.filename, v.cy+1+v.offset, v.buf.NumLines(), v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H,
-		ansipixels.Reset)
+	debugInfo := ""
+	if v.Debug {
+		debugInfo = fmt.Sprintf(" F:%d SW:%d SA:%d", v.fullRefresh, v.screenWidthCnt, v.screenAtCnt)
+	}
+	v.ap.WriteAt(0, v.usableHeight, "%s %sFile: %s (%d/%d lines) - %s - @%d,%d [%dx%d]%s %s",
+		ansipixels.Inverse, dirty, v.filename, v.cy+1+v.offset, v.buf.NumLines(),
+		v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H, debugInfo, ansipixels.Reset)
 	v.ap.ClearEndOfLine()
 	if v.cmdMode == CommandMode {
 		v.CommandStatus()
@@ -98,21 +111,60 @@ func (v *Vi) UpdateStatus() {
 	}
 }
 
-func (v *Vi) VScroll(delta int) {
+// VScrollWithoutUpdate moves the cursor and handles scrolling but doesn't force a full screen update.
+// Use this when you only need cursor movement and will handle the display update separately.
+func (v *Vi) VScrollWithoutUpdate(delta int) bool {
 	v.cy += delta
+	scrolled := false
 	if v.cy < 0 {
 		v.offset = max(0, v.offset+v.cy)
 		v.cy = 0
-		v.Update() // only if we scrolled. (in theory... shouldn't update at <0 etc).
+		scrolled = true
 	} else if v.cy >= v.usableHeight {
 		v.offset = min(v.buf.NumLines()-v.usableHeight, v.offset+v.cy-v.usableHeight+1)
 		v.cy = v.usableHeight - 1 // Keep cursor within bounds
-		v.Update()
+		scrolled = true
 	}
+	return scrolled // Return true if scrolling occurred
+}
+
+func (v *Vi) VScroll(delta int) {
+	if v.VScrollWithoutUpdate(delta) {
+		v.Update() // only if we scrolled. (in theory... shouldn't update at <0 etc).
+	}
+}
+
+func (v *Vi) BufferLineNumber() int {
+	return v.cy + v.offset
 }
 
 func (v *Vi) Beep() {
 	v.ap.WriteRune('\a') // Beep for unrecognized command or error
+}
+
+// calculateCenteredPosition returns the offset and cy values needed to center currentLine
+// on the screen. This is a pure function with no side effects.
+func (v *Vi) calculateCenteredPosition(currentLine, numLines int) (offset, cy int) {
+	maxLine := max(0, numLines-1) // file might be empty, let's not have -1 as last line.
+	// Clamp currentLine to valid range
+	currentLine = min(maxLine, currentLine)
+	// Try to center, but respect bounds
+	offset = max(0, currentLine-v.usableHeight/2)
+	cy = currentLine - offset
+	return offset, cy
+}
+
+func (v *Vi) AppendModeOn() {
+	v.cmdMode = AppendMode
+}
+
+func (v *Vi) InsertModeOn() {
+	v.cmdMode = InsertMode
+}
+
+// Append() returns true if we are in optimized append mode (vs regular insert mode).
+func (v *Vi) Append() bool {
+	return v.cmdMode == AppendMode
 }
 
 func (v *Vi) navigate(b byte) {
@@ -131,15 +183,41 @@ func (v *Vi) navigate(b byte) {
 	case 2: // Ctrl-B
 		v.VScroll(-v.usableHeight) // Page up
 	case 12: // Ctrl-L - do like emacs and also recenter so we don't need "zz" for now
-		v.offset += v.cy - v.usableHeight/2 // Center the view
-		v.cy = v.usableHeight / 2           // Center cursor vertically
+		// Center current line, with bounds checking
+		v.offset, v.cy = v.calculateCenteredPosition(v.BufferLineNumber(), v.buf.NumLines())
 		v.Update()
 	case 'h', 0x7f: // Backspace or 'h'
 		v.cx = max(0, v.cx-1) // Move cursor left
 	case 'l':
 		v.cx = min(v.ap.W-1, v.cx+1) // Move cursor right
 	case 'i':
-		v.cmdMode = InsertMode
+		if v.cx == 0 && v.EmptyLine() {
+			v.AppendModeOn() // really append (eg initial empty line and hit 'i')
+		} else {
+			v.InsertModeOn()
+		}
+	case 'o': // new line below
+		v.AppendModeOn()
+		v.handleNewlineInsertion()
+	case 'O': // new line above
+		v.AppendModeOn()
+		v.cy-- // need to work on first line too - no clamping.
+		v.handleNewlineInsertion()
+	case '$':
+		// Move to end of line
+		v.cx = max(0, v.ScreenWidth(v.buf.GetLine(v.BufferLineNumber()))-1) // Move cursor to end of line
+	case '0':
+		// Move to start of line
+		v.cx = 0 // Move cursor to start of line
+	case 'G':
+		// Go to the last line
+		v.cx = 0 // Reset cursor to start of line
+		v.VScroll(v.buf.NumLines() - 1 - v.BufferLineNumber())
+	case 'A':
+		// Append at end of line
+		currentLine := v.buf.GetLine(v.BufferLineNumber())
+		v.cx = v.ScreenWidth(currentLine) // Move cursor to end of line
+		v.AppendModeOn()                  // We're now in append mode
 	case ':':
 		v.cmdMode = CommandMode
 		v.ap.WriteAtStr(0, v.ap.H-1, ":")
@@ -150,6 +228,11 @@ func (v *Vi) navigate(b byte) {
 		// beep
 		v.Beep() // Beep for unrecognized command
 	}
+}
+
+// EmptyLine checks if the current line is empty.
+func (v *Vi) EmptyLine() bool {
+	return v.buf.GetLine(v.cy+v.offset) == ""
 }
 
 func (v *Vi) WriteBottom(msg string, args ...any) {
@@ -166,40 +249,60 @@ func (v *Vi) CmdResult(msg string, args ...any) {
 func (v *Vi) command(data []byte) bool {
 	cmd := string(data)
 	cont := true
-	switch cmd {
-	case "q!":
+	overwrite := true
+	msg := "Error overwriting file"
+	switch {
+	case cmd == "q!":
 		v.ap.WriteAt(0, v.ap.H-1, "Exiting without saving...\r\n")
 		cont = false // Exit the editor
-	case "q":
+	case cmd == "q":
 		if v.buf.IsDirty() {
 			v.WriteBottom("Use :wq to save and exit. :q! to exit without saving.")
 		} else {
 			cont = false
 			v.WriteBottom("Exiting...\r\n")
 		}
-	case "wq":
+	case cmd == "wq":
 		cont = false
 		fallthrough
-	case "w":
+	case cmd == "w":
 		if !v.buf.IsDirty() {
 			v.WriteBottom("No changes to save.")
 		} else {
-			err := v.buf.Save() // Save the buffer to the file
-			if err != nil {
-				v.ShowError("Error saving file", err)
-				cont = true // Stay in command mode
-			} else {
-				// TODO: in common with tabs etc... make a function to display result yet switch back to nav mode
-				v.CmdResult("File saved successfully.")
-			}
+			cont = v.Save()
 		}
-	case "tabs":
+	case cmd == "tabs":
 		// v.UpdateTabs() // done on resize already.
 		v.CmdResult("Tabs: %v", v.tabs)
+	case strings.HasPrefix(cmd, "w "):
+		overwrite = false
+		msg = "Error opening new file (use :w! to overwrite): "
+		fallthrough
+	case strings.HasPrefix(cmd, "w! "):
+		fname := cmd[strings.IndexByte(cmd, ' ')+1:] // Get the filename after "w " or "w! "
+		err := v.buf.OpenNewFile(fname, overwrite)
+		if err != nil {
+			v.ShowError(msg, err)
+			break
+		}
+		v.filename = fname // Update the filename in the editor
+		_ = v.Save()
 	default:
 		v.WriteBottom("Unknown command: %q (:q to quit)", cmd)
 	}
 	return cont // Exit or Continue processing
+}
+
+func (v *Vi) Save() (cont bool) {
+	err := v.buf.Save() // Save the buffer to the file
+	if err != nil {
+		v.ShowError("Error saving file", err)
+		cont = true // Stay in command mode
+	} else {
+		// TODO: in common with tabs etc... make a function to display result yet switch back to nav mode
+		v.CmdResult("File saved successfully.")
+	}
+	return
 }
 
 func (v *Vi) HasEsc() int {
@@ -296,7 +399,7 @@ func (v *Vi) ProcessOne() bool {
 			v.inputBuf = v.inputBuf[ret+1:] // Remove the command input from
 			cont = v.command(data)
 		}
-	case InsertMode:
+	case InsertMode, AppendMode:
 		// Handle insert mode input (e.g., add to buffer)
 		str := string(v.inputBuf)
 		hasEsc := v.HasEsc()
@@ -305,6 +408,7 @@ func (v *Vi) ProcessOne() bool {
 			str = str[:hasEsc]                 // Get the string up to the escape character
 			v.inputBuf = v.inputBuf[hasEsc+1:] // Remove the escape sequence
 			if len(v.inputBuf) == 0 {
+				v.UpdateStatus()
 				break // No input left before escape
 			}
 		} else {
@@ -315,42 +419,115 @@ func (v *Vi) ProcessOne() bool {
 		if retPos >= 0 {
 			v.inputBuf = []byte(str[retPos+1:]) // Keep the rest of the input after the carriage return
 			str = str[:retPos]                  // Remove everything after the first carriage return
-			if len(str) == 0 {
-				v.cy++
-				v.cx = 0
-				v.UpdateStatus()
-				break // No input to insert, just move cursor down without beeping for empty input
-			}
 		}
-		err := v.Insert(FilterSpecialChars(str)) // Insert the string into the buffer
-		if err != nil {
-			v.ShowError("Error inserting text", err)
-			return false // abort
+
+		// Insert any text content first
+		if len(str) > 0 {
+			v.Insert(FilterSpecialChars(str))
 		}
+
+		// Handle newline if present
 		if retPos >= 0 {
-			v.cy++
-			v.cx = 0
+			v.handleNewlineInsertion()
+			// After newline, we're at the beginning of a new line at the end of file
+			// So we can stay in append mode if we were already in it
+		} else {
+			v.UpdateStatus() // Just update status if no newline
 		}
-		v.UpdateStatus()
 	}
 	return cont // Continue processing or not if command was 'q'
 }
 
-func (v *Vi) Insert(str string) (err error) {
+func (v *Vi) Insert(str string) {
 	if len(str) == 0 {
-		v.Beep()   // only special characters/controls.
-		return nil // Nothing to insert
+		v.Beep() // only special characters/controls.
+		return   // Nothing to insert
 	}
-	lineNum := v.cy + v.offset
-	line := v.buf.InsertChars(v, lineNum, v.cx, str) // Insert the string at the current cursor position
+	lineNum := v.BufferLineNumber()
+	var line string
+	if v.Append() {
+		v.buf.AppendToLine(lineNum, str)
+	} else {
+		line = v.buf.InsertChars(v, lineNum, v.cx, str) // Insert the string at the current cursor position
+	}
 	v.ap.WriteAtStr(v.cx, v.cy, str)
-	v.cx, v.cy, err = v.ap.ReadCursorPosXY()
-	if line != "" {
+	v.cx, v.cy, _ = v.ap.ReadCursorPosXY()
+	if line == "" {
+		v.AppendModeOn() // If we inserted at the end of the line, switch to cheaper append mode
+	} else {
 		v.ap.MoveHorizontally(0) // Move cursor to the start of the line
 		v.ap.ClearEndOfLine()
 		v.ap.WriteString(line) // Write the full line.
 	}
-	return err
+}
+
+// InsertNewline handles inserting a newline at the current cursor position.
+// It splits the current line and creates a new line with the remaining text.
+func (v *Vi) InsertNewline() {
+	currentLineNum := v.BufferLineNumber()
+	currentLine := v.buf.GetLine(currentLineNum)
+
+	// Convert screen position to rune offset for proper Unicode handling
+	runeOffset := v.ScreenAtToRune(v.cx, currentLine)
+
+	v.InsertNewlineAtOffset(runeOffset, currentLineNum, currentLine)
+}
+
+// InsertNewlineAtOffset handles inserting a newline at a pre-calculated byte offset.
+// This avoids the expensive screen-position-to-byte-offset calculation when the offset is already known.
+func (v *Vi) InsertNewlineAtOffset(runeOffset, currentLineNum int, currentLine string) {
+	// Split the line at the specified offset
+	var leftPart, rightPart string
+	if runeOffset <= len(currentLine) {
+		leftPart = currentLine[:runeOffset]
+		rightPart = currentLine[runeOffset:]
+	} else {
+		// Cursor is beyond the line, pad with spaces
+		leftPart = currentLine + strings.Repeat(" ", runeOffset-len(currentLine))
+	}
+	// Update the current line with the left part
+	v.buf.ReplaceLine(currentLineNum, leftPart)
+	// Insert a new line with the right part
+	v.buf.InsertLine(currentLineNum+1, rightPart)
+}
+
+// handleNewlineInsertion handles the insertion of a newline with optimized screen updates.
+func (v *Vi) handleNewlineInsertion() {
+	currentLineNum := v.BufferLineNumber()
+	// Special case of insert at the top of file ('O' command at c.y==-1 offset 0)
+	if currentLineNum < 0 {
+		v.buf.InsertLine(0, "") // Insert a new line at the top
+		v.cy = 0                // Reset cursor to the first line
+		v.cx = 0                // Reset cursor to the start of the line
+		v.Update()              // Update the display after inserting the new line
+		return
+	}
+	currentLine := v.buf.GetLine(currentLineNum)
+
+	var runeOffset int
+	canFastUpdate := true
+
+	if v.Append() {
+		// In append mode, we're at the end of the line - no need to calculate screen position
+		runeOffset = len(currentLine)
+	} else {
+		// Only calculate screen position if we're not in append mode
+		runeOffset = v.ScreenAtToRune(v.cx, currentLine)
+		// Check if we can do a fast update (no full screen redraw needed)
+		canFastUpdate = (runeOffset >= len(currentLine)) // At or past end of line
+	}
+	canFastUpdate = canFastUpdate && (currentLineNum >= v.buf.NumLines()-1) // At or past end of file
+
+	v.InsertNewlineAtOffset(runeOffset, currentLineNum, currentLine)
+	scrolled := v.VScrollWithoutUpdate(1)
+	v.cx = 0
+
+	if scrolled || !canFastUpdate {
+		v.Update() // Full update needed for scrolling or line splitting
+	} else {
+		// Fast update: status update only (cursor is already positioned correctly by VScrollWithoutUpdate)
+		v.UpdateStatus()
+	}
 }
 
 func (v *Vi) ShowError(msg string, err error) {
