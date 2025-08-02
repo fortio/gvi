@@ -212,7 +212,7 @@ func (v *Vi) navigate(b byte) {
 	case 'G':
 		// Go to the last line
 		v.cx = 0 // Reset cursor to start of line
-		v.VScroll(v.buf.NumLines() - v.BufferLineNumber())
+		v.VScroll(v.buf.NumLines() - 1 - v.BufferLineNumber())
 	case 'A':
 		// Append at end of line
 		currentLine := v.buf.GetLine(v.BufferLineNumber())
