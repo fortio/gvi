@@ -203,6 +203,16 @@ func (v *Vi) navigate(b byte) {
 		v.AppendModeOn()
 		v.cy-- // need to work on first line too - no clamping.
 		v.handleNewlineInsertion()
+	case '$':
+		// Move to end of line
+		v.cx = max(0, v.ScreenWidth(v.buf.GetLine(v.BufferLineNumber()))-1) // Move cursor to end of line
+	case '0':
+		// Move to start of line
+		v.cx = 0 // Move cursor to start of line
+	case 'G':
+		// Go to the last line
+		v.cx = 0 // Reset cursor to start of line
+		v.VScroll(v.buf.NumLines() - v.BufferLineNumber())
 	case 'A':
 		// Append at end of line
 		currentLine := v.buf.GetLine(v.BufferLineNumber())
