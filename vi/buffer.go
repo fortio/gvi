@@ -140,6 +140,8 @@ func (b *Buffer) ReplaceLine(lineNum int, newContent string) {
 }
 
 // GetLine returns the content of a single line.
+// Panics if lineNum is negative.
+// Returns an empty string if lineNum is greater than or equal to the number of lines in the buffer.
 func (b *Buffer) GetLine(lineNum int) string {
 	if lineNum < 0 {
 		panic("line number out of range")
