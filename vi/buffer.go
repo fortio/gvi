@@ -22,9 +22,23 @@ type Buffer struct {
 	dirty bool // True if the buffer has unsaved changes
 }
 
+// Doesn't overwrite existing files, returns false if file already exists.
+func (b *Buffer) OpenNewFile(filename string, overwrite bool) error {
+	mode := os.O_CREATE | os.O_WRONLY
+	if !overwrite {
+		mode |= os.O_EXCL
+	}
+	f, err := os.OpenFile(filename, mode, 0o644)
+	if err != nil {
+		return err
+	}
+	b.f = f
+	return nil
+}
+
 // Open initializes the buffer with the contents of the file.
 func (b *Buffer) Open(filename string) error {
-	f, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0o666)
+	f, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		return err
 	}

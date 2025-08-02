@@ -249,40 +249,60 @@ func (v *Vi) CmdResult(msg string, args ...any) {
 func (v *Vi) command(data []byte) bool {
 	cmd := string(data)
 	cont := true
-	switch cmd {
-	case "q!":
+	overwrite := true
+	msg := "Error overwriting file"
+	switch {
+	case cmd == "q!":
 		v.ap.WriteAt(0, v.ap.H-1, "Exiting without saving...\r\n")
 		cont = false // Exit the editor
-	case "q":
+	case cmd == "q":
 		if v.buf.IsDirty() {
 			v.WriteBottom("Use :wq to save and exit. :q! to exit without saving.")
 		} else {
 			cont = false
 			v.WriteBottom("Exiting...\r\n")
 		}
-	case "wq":
+	case cmd == "wq":
 		cont = false
 		fallthrough
-	case "w":
+	case cmd == "w":
 		if !v.buf.IsDirty() {
 			v.WriteBottom("No changes to save.")
 		} else {
-			err := v.buf.Save() // Save the buffer to the file
-			if err != nil {
-				v.ShowError("Error saving file", err)
-				cont = true // Stay in command mode
-			} else {
-				// TODO: in common with tabs etc... make a function to display result yet switch back to nav mode
-				v.CmdResult("File saved successfully.")
-			}
+			cont = v.Save()
 		}
-	case "tabs":
+	case cmd == "tabs":
 		// v.UpdateTabs() // done on resize already.
 		v.CmdResult("Tabs: %v", v.tabs)
+	case strings.HasPrefix(cmd, "w "):
+		overwrite = false
+		msg = "Error opening new file (use :w! to overwrite): "
+		fallthrough
+	case strings.HasPrefix(cmd, "w! "):
+		fname := cmd[strings.IndexByte(cmd, ' ')+1:] // Get the filename after "w " or "w! "
+		err := v.buf.OpenNewFile(fname, overwrite)
+		if err != nil {
+			v.ShowError(msg, err)
+			break
+		}
+		v.filename = fname // Update the filename in the editor
+		_ = v.Save()
 	default:
 		v.WriteBottom("Unknown command: %q (:q to quit)", cmd)
 	}
 	return cont // Exit or Continue processing
+}
+
+func (v *Vi) Save() (cont bool) {
+	err := v.buf.Save() // Save the buffer to the file
+	if err != nil {
+		v.ShowError("Error saving file", err)
+		cont = true // Stay in command mode
+	} else {
+		// TODO: in common with tabs etc... make a function to display result yet switch back to nav mode
+		v.CmdResult("File saved successfully.")
+	}
+	return
 }
 
 func (v *Vi) HasEsc() int {
