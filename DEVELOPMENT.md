@@ -39,6 +39,8 @@ GVI is a vi editor implementation in Go that handles Unicode text properly, incl
 - Tab width is calculated relative to current screen position
 - Control characters have zero screen width
 - Wide characters occupy 2 screen columns
+- ScreenWidth and ScreenAtToRune are **expensive** and we try to minimize the number of time they are called (see counters -debug mode)
+- likewise Update is expensive and to be avoided if UpdateStatus and write and/or clearing a single line can achieve the update.
 
 ## Development Workflow
 

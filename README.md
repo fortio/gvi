@@ -5,6 +5,8 @@ It's just a bit more like "Demo of how to create something that looks/feel a lik
 
 ![Screenshot](screenshot.png)
 
+So far it is 760 lines of go code across 5 files (+89 lines of comments and 77 blank lines, excluding test files).
+
 ## Install
 
 Get one of binary [releases](https://github.com/fortio/gvi/releases)
