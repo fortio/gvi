@@ -80,6 +80,8 @@ func (b *Buffer) InsertLine(lineNum int, text string) {
 
 // Returns the full line if insert is in the middle, empty if that was already at the end.
 // It makes most common typing (at the end/append) faster.
+// This is the expensive one (calculating screen offsets) but if it returns "" it means
+// the insertion was at the of the line and subsequent appends can be done faster using AppendToLine.
 func (b *Buffer) InsertChars(calc ScreenPositionCalculator, lineNum, at int, text string) string {
 	if lineNum < 0 {
 		panic("negative line number")
@@ -90,7 +92,7 @@ func (b *Buffer) InsertChars(calc ScreenPositionCalculator, lineNum, at int, tex
 		b.lines = append(b.lines, "")
 	}
 	line := b.lines[lineNum]
-	// TODO: skip this (expensive stuff) when we're insert at end of line mode / remember.
+
 	atOffset := calc.ScreenAtToRune(at, line) // Convert screen position to byte offset
 	returnLine := false
 	if atOffset > len(line) {
@@ -107,6 +109,20 @@ func (b *Buffer) InsertChars(calc ScreenPositionCalculator, lineNum, at int, tex
 		return line
 	}
 	return "" // was insert at the end, no line to return
+}
+
+// AppendToLine appends text to the end of a line.
+// This is optimized for the common case of appending and skips screen position calculations.
+func (b *Buffer) AppendToLine(lineNum int, text string) {
+	if lineNum < 0 {
+		panic("negative line number")
+	}
+	b.dirty = true
+	// Pad with empty lines if inserting past the end of the buffer
+	for lineNum >= len(b.lines) {
+		b.lines = append(b.lines, "")
+	}
+	b.lines[lineNum] += text
 }
 
 // ReplaceLine replaces the content of a line at the given line number.

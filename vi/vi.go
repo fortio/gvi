@@ -30,19 +30,22 @@ func (m Mode) String() string {
 }
 
 type Vi struct {
-	cmdMode      Mode
-	ap           *ansipixels.AnsiPixels
-	filename     string // Not used in this example, but could be used to track the file being edited
-	cx, cy       int    // Cursor position
-	inputBuf     []byte // Buffer for partial input
-	buf          Buffer
-	splash       bool // Show splash screen on first refresh.
-	offset       int  // Offset in lines for scrolling.
-	usableHeight int  // v.ap.H - 2
-	keepMessage  bool // Clear command/message line after processing input or not.
-	tabs         []int
-	Debug        bool // Debug mode flag
-	fullRefresh  int  // Counter for full screen refreshes
+	cmdMode        Mode
+	ap             *ansipixels.AnsiPixels
+	filename       string // Not used in this example, but could be used to track the file being edited
+	cx, cy         int    // Cursor position
+	inputBuf       []byte // Buffer for partial input
+	buf            Buffer
+	splash         bool // Show splash screen on first refresh.
+	offset         int  // Offset in lines for scrolling.
+	usableHeight   int  // v.ap.H - 2
+	keepMessage    bool // Clear command/message line after processing input or not.
+	tabs           []int
+	Debug          bool // Debug mode flag
+	fullRefresh    int  // Counter for full screen refreshes
+	screenWidthCnt int  // Counter for ScreenWidth calls
+	screenAtCnt    int  // Counter for ScreenAtToRune calls
+	appendMode     bool // Track if we're in append mode (at end of line)
 }
 
 func NewVi(ap *ansipixels.AnsiPixels) *Vi {
@@ -88,7 +91,7 @@ func (v *Vi) UpdateStatus() {
 	}
 	debugInfo := ""
 	if v.Debug {
-		debugInfo = fmt.Sprintf(" F:%d", v.fullRefresh)
+		debugInfo = fmt.Sprintf(" F:%d SW:%d SA:%d", v.fullRefresh, v.screenWidthCnt, v.screenAtCnt)
 	}
 	v.ap.WriteAt(0, v.usableHeight, "%s %sFile: %s (%d/%d lines) - %s - @%d,%d [%dx%d]%s %s",
 		ansipixels.Inverse, dirty, v.filename, v.cy+1+v.offset, v.buf.NumLines(),
@@ -171,6 +174,14 @@ func (v *Vi) navigate(b byte) {
 		v.cx = min(v.ap.W-1, v.cx+1) // Move cursor right
 	case 'i':
 		v.cmdMode = InsertMode
+		v.appendMode = false // Regular insert mode
+	case 'A':
+		// Append at end of line
+		currentLineNum := v.cy + v.offset
+		currentLine := v.buf.GetLine(currentLineNum)
+		v.cx = v.ScreenWidth(currentLine) // Move cursor to end of line
+		v.cmdMode = InsertMode
+		v.appendMode = true // We're now in append mode
 	case ':':
 		v.cmdMode = CommandMode
 		v.ap.WriteAtStr(0, v.ap.H-1, ":")
@@ -333,6 +344,7 @@ func (v *Vi) ProcessOne() bool {
 		hasEsc := v.HasEsc()
 		if hasEsc >= 0 {
 			v.cmdMode = NavMode                // Switch back to navigation mode on escape
+			v.appendMode = false               // Clear append mode
 			str = str[:hasEsc]                 // Get the string up to the escape character
 			v.inputBuf = v.inputBuf[hasEsc+1:] // Remove the escape sequence
 			if len(v.inputBuf) == 0 {
@@ -350,16 +362,14 @@ func (v *Vi) ProcessOne() bool {
 
 		// Insert any text content first
 		if len(str) > 0 {
-			err := v.Insert(FilterSpecialChars(str)) // Insert the string into the buffer
-			if err != nil {
-				v.ShowError("Error inserting text", err)
-				return false // abort
-			}
+			v.Insert(FilterSpecialChars(str))
 		}
 
 		// Handle newline if present
 		if retPos >= 0 {
 			v.handleNewlineInsertion()
+			// After newline, we're at the beginning of a new line at the end of file
+			// So we can stay in append mode if we were already in it
 		} else {
 			v.UpdateStatus() // Just update status if no newline
 		}
@@ -367,21 +377,27 @@ func (v *Vi) ProcessOne() bool {
 	return cont // Continue processing or not if command was 'q'
 }
 
-func (v *Vi) Insert(str string) (err error) {
+func (v *Vi) Insert(str string) {
 	if len(str) == 0 {
-		v.Beep()   // only special characters/controls.
-		return nil // Nothing to insert
+		v.Beep() // only special characters/controls.
+		return   // Nothing to insert
 	}
 	lineNum := v.cy + v.offset
-	line := v.buf.InsertChars(v, lineNum, v.cx, str) // Insert the string at the current cursor position
+	var line string
+	if v.appendMode {
+		v.buf.AppendToLine(lineNum, str)
+	} else {
+		line = v.buf.InsertChars(v, lineNum, v.cx, str) // Insert the string at the current cursor position
+	}
 	v.ap.WriteAtStr(v.cx, v.cy, str)
-	v.cx, v.cy, err = v.ap.ReadCursorPosXY()
-	if line != "" {
+	v.cx, v.cy, _ = v.ap.ReadCursorPosXY()
+	if line == "" {
+		v.appendMode = true // If we inserted at the end of the line, switch to cheaper append mode
+	} else {
 		v.ap.MoveHorizontally(0) // Move cursor to the start of the line
 		v.ap.ClearEndOfLine()
 		v.ap.WriteString(line) // Write the full line.
 	}
-	return err
 }
 
 // InsertNewline handles inserting a newline at the current cursor position.

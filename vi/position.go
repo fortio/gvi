@@ -48,6 +48,7 @@ func (v *Vi) iterateGraphemes(str string, fn func(offset, screenOffset, prevScre
 
 // Translate a screen position to the byte offset of the rune in the current line.
 func (v *Vi) ScreenAtToRune(x int, str string) int {
+	v.screenAtCnt++ // Increment counter for performance monitoring
 	if x < 0 {
 		panic("negative x coordinate")
 	}
@@ -105,6 +106,7 @@ func (v *Vi) NextTab(x int) int {
 // ScreenWidth calculates the screen width of a string, properly handling
 // tabs, control characters, and multi-rune grapheme clusters.
 func (v *Vi) ScreenWidth(str string) int {
+	v.screenWidthCnt++ // Increment counter for performance monitoring
 	return v.iterateGraphemes(str, func(_, _, _, _ int) bool {
 		return false // Never stop iteration, just calculate the full width
 	})
