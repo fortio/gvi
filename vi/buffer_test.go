@@ -115,3 +115,101 @@ func TestInsertMultiRuneGraphemes(t *testing.T) {
 		t.Errorf("Past-end insert test: Expected %q got %q", expected, actual)
 	}
 }
+
+func TestDeleteChar(t *testing.T) {
+	v := &Vi{}
+	v.tabs = []int{4, 8, 12, 16, 20} // Set tab stops
+
+	tests := []struct {
+		name           string
+		initialContent string
+		deleteAt       int
+		expected       string
+	}{
+		{
+			name:           "Delete ASCII character",
+			initialContent: "hello",
+			deleteAt:       1, // Delete 'e'
+			expected:       "hllo",
+		},
+		{
+			name:           "Delete first character",
+			initialContent: "hello",
+			deleteAt:       0, // Delete 'h'
+			expected:       "ello",
+		},
+		{
+			name:           "Delete last character",
+			initialContent: "hello",
+			deleteAt:       4, // Delete 'o'
+			expected:       "hell",
+		},
+		{
+			name:           "Delete emoji",
+			initialContent: "a😀b",
+			deleteAt:       1, // Delete '😀'
+			expected:       "ab",
+		},
+		{
+			name:           "Delete wide character",
+			initialContent: "a乒b",
+			deleteAt:       1, // Delete '乒'
+			expected:       "ab",
+		},
+		{
+			name:           "Delete tab character",
+			initialContent: "a\tb",
+			deleteAt:       1, // Delete '\t'
+			expected:       "ab",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Setup buffer with initial content
+			v.buf.lines = []string{test.initialContent}
+			v.buf.dirty = false // Reset dirty flag
+
+			// Delete character at specified position
+			v.buf.DeleteChar(v, 0, test.deleteAt)
+
+			// Check the buffer was updated
+			actual := v.buf.lines[0]
+			if actual != test.expected {
+				t.Errorf("Buffer line is %q, expected %q", actual, test.expected)
+			}
+
+			// Check dirty flag was set
+			if !v.buf.dirty {
+				t.Error("Buffer dirty flag should be set after deletion")
+			}
+		})
+	}
+
+	// Test edge cases
+	t.Run("Delete from empty line", func(t *testing.T) {
+		v.buf.lines = []string{""}
+		v.buf.DeleteChar(v, 0, 0)
+		if v.buf.lines[0] != "" {
+			t.Errorf("Empty line should remain empty, got %q", v.buf.lines[0])
+		}
+	})
+
+	t.Run("Delete beyond line length", func(t *testing.T) {
+		v.buf.lines = []string{"abc"}
+		original := v.buf.lines[0]
+		v.buf.DeleteChar(v, 0, 10)
+		if v.buf.lines[0] != original {
+			t.Errorf("Line should be unchanged when deleting beyond length")
+		}
+	})
+
+	t.Run("Delete from non-existent line", func(t *testing.T) {
+		v.buf.lines = []string{"abc"}
+		original := v.buf.lines[0]
+		v.buf.DeleteChar(v, 5, 0)
+		if v.buf.lines[0] != original {
+			t.Errorf("Line should be unchanged when deleting from non-existent line")
+		}
+	})
+}

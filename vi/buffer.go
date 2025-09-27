@@ -14,6 +14,11 @@ type ScreenPositionCalculator interface {
 	ScreenAtToRune(x int, str string) int
 }
 
+type Line struct {
+	bytes []byte // Raw bytes of the line
+
+}
+
 // Buffer represents a full buffer (file) in the editor.
 // A view of it is shown in the terminal.
 type Buffer struct {
@@ -137,6 +142,32 @@ func (b *Buffer) AppendToLine(lineNum int, text string) {
 		b.lines = append(b.lines, "")
 	}
 	b.lines[lineNum] += text
+}
+
+// DeleteChar deletes a character at the specified screen position.
+func (b *Buffer) DeleteChar(calc ScreenPositionCalculator, lineNum, at int) {
+	if lineNum < 0 || lineNum >= len(b.lines) {
+		return
+	}
+	line := b.lines[lineNum]
+	if len(line) == 0 {
+		return
+	}
+
+	byteOffset := calc.ScreenAtToRune(at, line)
+	if byteOffset >= len(line) {
+		return
+	}
+
+	// Find next rune boundary
+	runes := []rune(line)
+	for i := range runes {
+		if len(string(runes[:i])) == byteOffset {
+			b.lines[lineNum] = string(runes[:i]) + string(runes[i+1:])
+			b.dirty = true
+			return
+		}
+	}
 }
 
 // ReplaceLine replaces the content of a line at the given line number.
