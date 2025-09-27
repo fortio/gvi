@@ -218,6 +218,9 @@ func (v *Vi) navigate(b byte) {
 		currentLine := v.buf.GetLine(v.BufferLineNumber())
 		v.cx = v.ScreenWidth(currentLine) // Move cursor to end of line
 		v.AppendModeOn()                  // We're now in append mode
+	case 'x':
+		// Delete character under cursor
+		v.deleteCharUnderCursor()
 	case ':':
 		v.cmdMode = CommandMode
 		v.ap.WriteAtStr(0, v.ap.H-1, ":")
@@ -233,6 +236,40 @@ func (v *Vi) navigate(b byte) {
 // EmptyLine checks if the current line is empty.
 func (v *Vi) EmptyLine() bool {
 	return v.buf.GetLine(v.cy+v.offset) == ""
+}
+
+// deleteCharUnderCursor deletes the character at the current cursor position.
+func (v *Vi) deleteCharUnderCursor() {
+	lineNum := v.BufferLineNumber()
+	currentLine := v.buf.GetLine(lineNum)
+	currentLineWidth := v.ScreenWidth(currentLine)
+
+	if len(currentLine) == 0 || v.cx >= currentLineWidth {
+		v.Beep()
+		return
+	}
+
+	// Check if we're deleting at the end of the line (like append mode)
+	deletingAtEnd := v.cx >= currentLineWidth-1
+
+	v.buf.DeleteChar(v, lineNum, v.cx)
+
+	if deletingAtEnd {
+		// Deleting at end - just clear from cursor to end of line and adjust cursor
+		if currentLineWidth > 1 {
+			v.cx = currentLineWidth - 2 // Move cursor back when deleting last character
+		}
+		v.ap.ClearEndOfLine()
+		v.UpdateStatus()
+	} else {
+		// Deleting in middle - redraw the full line
+		newLine := v.buf.GetLine(lineNum)
+		v.ap.MoveHorizontally(0) // Move cursor to the start of the line
+		v.ap.ClearEndOfLine()
+		v.ap.WriteString(newLine)   // Write the updated line
+		v.ap.MoveCursor(v.cx, v.cy) // Move cursor back to original position
+		v.UpdateStatus()
+	}
 }
 
 func (v *Vi) WriteBottom(msg string, args ...any) {
