@@ -1,6 +1,6 @@
 module fortio.org/gvi
 
-go 1.23.8
+go 1.23.0
 
 require (
 	fortio.org/cli v1.12.2
