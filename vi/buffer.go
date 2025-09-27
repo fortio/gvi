@@ -14,10 +14,11 @@ type ScreenPositionCalculator interface {
 	ScreenAtToRune(x int, str string) int
 }
 
+/*
 type Line struct {
 	bytes []byte // Raw bytes of the line
-
 }
+*/
 
 // Buffer represents a full buffer (file) in the editor.
 // A view of it is shown in the terminal.
