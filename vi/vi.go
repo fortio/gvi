@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"fortio.org/terminal/ansipixels"
+	"fortio.org/terminal/ansipixels/tcolor"
 )
 
 type Mode int
@@ -20,13 +21,13 @@ const (
 func (m Mode) String() string {
 	switch m {
 	case NavMode:
-		return ansipixels.Cyan + "Navigation" + ansipixels.White
+		return tcolor.Cyan.Foreground() + "Navigation" + tcolor.White.Foreground()
 	case CommandMode:
-		return ansipixels.Yellow + "Command" + ansipixels.White
+		return tcolor.Yellow.Foreground() + "Command" + tcolor.White.Foreground()
 	case InsertMode:
-		return ansipixels.Green + "Insert" + ansipixels.White
+		return tcolor.Green.Foreground() + "Insert" + tcolor.White.Foreground()
 	case AppendMode:
-		return ansipixels.Green + "Append" + ansipixels.White
+		return tcolor.Green.Foreground() + "Append" + tcolor.White.Foreground()
 	default:
 		return "Unknown"
 	}
@@ -89,15 +90,15 @@ func (v *Vi) CommandStatus() {
 func (v *Vi) UpdateStatus() {
 	dirty := ""
 	if v.buf.IsDirty() {
-		dirty = ansipixels.Purple + "*" + ansipixels.White
+		dirty = tcolor.Purple.Foreground() + "*" + tcolor.White.Foreground()
 	}
 	debugInfo := ""
 	if v.Debug {
 		debugInfo = fmt.Sprintf(" F:%d SW:%d SA:%d", v.fullRefresh, v.screenWidthCnt, v.screenAtCnt)
 	}
 	v.ap.WriteAt(0, v.usableHeight, "%s %sFile: %s (%d/%d lines) - %s - @%d,%d [%dx%d]%s %s",
-		ansipixels.Inverse, dirty, v.filename, v.cy+1+v.offset, v.buf.NumLines(),
-		v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H, debugInfo, ansipixels.Reset)
+		tcolor.Inverse, dirty, v.filename, v.cy+1+v.offset, v.buf.NumLines(),
+		v.cmdMode.String(), v.cx+1, v.cy+1, v.ap.W, v.ap.H, debugInfo, tcolor.Reset)
 	v.ap.ClearEndOfLine()
 	if v.cmdMode == CommandMode {
 		v.CommandStatus()
@@ -218,6 +219,9 @@ func (v *Vi) navigate(b byte) {
 		currentLine := v.buf.GetLine(v.BufferLineNumber())
 		v.cx = v.ScreenWidth(currentLine) // Move cursor to end of line
 		v.AppendModeOn()                  // We're now in append mode
+	case 'x':
+		// Delete character under cursor
+		v.deleteCharUnderCursor()
 	case ':':
 		v.cmdMode = CommandMode
 		v.ap.WriteAtStr(0, v.ap.H-1, ":")
@@ -233,6 +237,40 @@ func (v *Vi) navigate(b byte) {
 // EmptyLine checks if the current line is empty.
 func (v *Vi) EmptyLine() bool {
 	return v.buf.GetLine(v.cy+v.offset) == ""
+}
+
+// deleteCharUnderCursor deletes the character at the current cursor position.
+func (v *Vi) deleteCharUnderCursor() {
+	lineNum := v.BufferLineNumber()
+	currentLine := v.buf.GetLine(lineNum)
+	currentLineWidth := v.ScreenWidth(currentLine)
+
+	if len(currentLine) == 0 || v.cx >= currentLineWidth {
+		v.Beep()
+		return
+	}
+
+	// Check if we're deleting at the end of the line (like append mode)
+	deletingAtEnd := v.cx >= currentLineWidth-1
+
+	v.buf.DeleteChar(v, lineNum, v.cx)
+
+	if deletingAtEnd {
+		// Deleting at end - just clear from cursor to end of line and adjust cursor
+		if currentLineWidth > 1 {
+			v.cx = currentLineWidth - 2 // Move cursor back when deleting last character
+		}
+		v.ap.ClearEndOfLine()
+		v.UpdateStatus()
+	} else {
+		// Deleting in middle - redraw the full line
+		newLine := v.buf.GetLine(lineNum)
+		v.ap.MoveHorizontally(0) // Move cursor to the start of the line
+		v.ap.ClearEndOfLine()
+		v.ap.WriteString(newLine)   // Write the updated line
+		v.ap.MoveCursor(v.cx, v.cy) // Move cursor back to original position
+		v.UpdateStatus()
+	}
 }
 
 func (v *Vi) WriteBottom(msg string, args ...any) {
@@ -531,7 +569,7 @@ func (v *Vi) handleNewlineInsertion() {
 }
 
 func (v *Vi) ShowError(msg string, err error) {
-	v.ap.WriteAt(0, v.ap.H-1, "%s%s: %v%s", ansipixels.Red, msg, err, ansipixels.Reset)
+	v.ap.WriteAt(0, v.ap.H-1, "%s%s: %v%s", tcolor.Red.Foreground(), msg, err, tcolor.Reset)
 }
 
 func (v *Vi) Open(filename string) {
@@ -544,5 +582,5 @@ func (v *Vi) Open(filename string) {
 		return
 	}
 	v.Update()
-	v.ap.WriteAt(0, v.ap.H-1, "%sOpened file: %s%s", ansipixels.Green, filename, ansipixels.Reset)
+	v.ap.WriteAt(0, v.ap.H-1, "%sOpened file: %s%s", tcolor.Green.Foreground(), filename, tcolor.Reset)
 }
