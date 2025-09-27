@@ -1,11 +1,11 @@
 module fortio.org/gvi
 
-go 1.23.8
+go 1.23.0
 
 require (
 	fortio.org/cli v1.11.0
 	fortio.org/log v1.17.2
-	fortio.org/terminal v0.53.1
+	fortio.org/terminal v0.55.0
 	github.com/rivo/uniseg v0.4.7
 )
 
