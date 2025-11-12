@@ -28,7 +28,7 @@ type Buffer struct {
 	dirty bool // True if the buffer has unsaved changes
 }
 
-// Doesn't overwrite existing files, returns false if file already exists.
+// OpenNewFile doesn't overwrite existing files, returns false if file already exists.
 func (b *Buffer) OpenNewFile(filename string, overwrite bool) error {
 	mode := os.O_CREATE | os.O_WRONLY
 	if !overwrite {
@@ -65,10 +65,7 @@ func (b *Buffer) GetLines(start, num int) []string {
 	if start < 0 {
 		start = 0
 	}
-	end := start + num
-	if end > len(b.lines) {
-		end = len(b.lines)
-	}
+	end := min(start+num, len(b.lines))
 	if start >= end {
 		return nil // No lines to return
 	}
@@ -98,7 +95,7 @@ func (b *Buffer) InsertLine(lineNum int, text string) {
 	b.dirty = true
 }
 
-// Returns the full line if insert is in the middle, empty if that was already at the end.
+// InsertChars returns the full line if insert is in the middle, empty if that was already at the end.
 // It makes most common typing (at the end/append) faster.
 // This is the expensive one (calculating screen offsets) but if it returns "" it means
 // the insertion was at the of the line and subsequent appends can be done faster using AppendToLine.

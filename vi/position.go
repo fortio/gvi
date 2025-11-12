@@ -46,7 +46,7 @@ func (v *Vi) iterateGraphemes(str string, fn func(offset, screenOffset, prevScre
 	return screenOffset
 }
 
-// Translate a screen position to the byte offset of the rune in the current line.
+// ScreenAtToRune translates a screen position to the byte offset of the rune in the current line.
 func (v *Vi) ScreenAtToRune(x int, str string) int {
 	v.screenAtCnt++ // Increment counter for performance monitoring
 	if x < 0 {
