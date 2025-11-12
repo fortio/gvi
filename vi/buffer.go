@@ -14,6 +14,12 @@ type ScreenPositionCalculator interface {
 	ScreenAtToRune(x int, str string) int
 }
 
+/*
+type Line struct {
+	bytes []byte // Raw bytes of the line
+}
+*/
+
 // Buffer represents a full buffer (file) in the editor.
 // A view of it is shown in the terminal.
 type Buffer struct {
@@ -22,7 +28,7 @@ type Buffer struct {
 	dirty bool // True if the buffer has unsaved changes
 }
 
-// Doesn't overwrite existing files, returns false if file already exists.
+// OpenNewFile doesn't overwrite existing files, returns false if file already exists.
 func (b *Buffer) OpenNewFile(filename string, overwrite bool) error {
 	mode := os.O_CREATE | os.O_WRONLY
 	if !overwrite {
@@ -59,10 +65,7 @@ func (b *Buffer) GetLines(start, num int) []string {
 	if start < 0 {
 		start = 0
 	}
-	end := start + num
-	if end > len(b.lines) {
-		end = len(b.lines)
-	}
+	end := min(start+num, len(b.lines))
 	if start >= end {
 		return nil // No lines to return
 	}
@@ -92,7 +95,7 @@ func (b *Buffer) InsertLine(lineNum int, text string) {
 	b.dirty = true
 }
 
-// Returns the full line if insert is in the middle, empty if that was already at the end.
+// InsertChars returns the full line if insert is in the middle, empty if that was already at the end.
 // It makes most common typing (at the end/append) faster.
 // This is the expensive one (calculating screen offsets) but if it returns "" it means
 // the insertion was at the of the line and subsequent appends can be done faster using AppendToLine.
@@ -137,6 +140,32 @@ func (b *Buffer) AppendToLine(lineNum int, text string) {
 		b.lines = append(b.lines, "")
 	}
 	b.lines[lineNum] += text
+}
+
+// DeleteChar deletes a character at the specified screen position.
+func (b *Buffer) DeleteChar(calc ScreenPositionCalculator, lineNum, at int) {
+	if lineNum < 0 || lineNum >= len(b.lines) {
+		return
+	}
+	line := b.lines[lineNum]
+	if len(line) == 0 {
+		return
+	}
+
+	byteOffset := calc.ScreenAtToRune(at, line)
+	if byteOffset >= len(line) {
+		return
+	}
+
+	// Find next rune boundary
+	runes := []rune(line)
+	for i := range runes {
+		if len(string(runes[:i])) == byteOffset {
+			b.lines[lineNum] = string(runes[:i]) + string(runes[i+1:])
+			b.dirty = true
+			return
+		}
+	}
 }
 
 // ReplaceLine replaces the content of a line at the given line number.
