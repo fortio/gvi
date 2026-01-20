@@ -5,7 +5,7 @@ go 1.24.0
 require (
 	fortio.org/cli v1.12.3
 	fortio.org/log v1.18.3
-	fortio.org/terminal v0.63.1
+	fortio.org/terminal v0.63.3
 	github.com/rivo/uniseg v0.4.7
 )
 
