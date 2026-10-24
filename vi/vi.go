@@ -1,4 +1,4 @@
-package vi // import "fortio.org/gvi/vi"
+package vi
 
 import (
 	"bytes"
